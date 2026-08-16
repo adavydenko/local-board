@@ -1,8 +1,11 @@
 """Command line interface and stdio MCP transport."""
 import argparse, json, subprocess, sys
+from __future__ import annotations
 from pathlib import Path
 from .db import Board, BoardError
 from .http import mcp_message, serve
+from .mcp import serve_stdio
+from .web import serve
 
 def mcp_stdio(board):
  for line in sys.stdin:

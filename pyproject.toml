@@ -23,4 +23,10 @@ markers = ["browser: requires Playwright and an installed Chromium browser"]
 [tool.coverage.run]
 branch = true
 source = ["local_board"]
+description = "Repository-local issue tracker with MCP and a lightweight web UI"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.package-data]
+local_board = ["static/*"]
 
