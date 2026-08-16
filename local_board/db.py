@@ -60,6 +60,8 @@ CREATE INDEX IF NOT EXISTS idx_issues_project_status ON issues(project_id,status
 CREATE INDEX IF NOT EXISTS idx_activity_entity ON activity(entity_type,entity_id,id DESC);
 """
 
+SCHEMA_VERSION = 1
+
 ISSUE_TYPES = ("task", "bug", "feature", "chore", "epic")
 PRIORITIES = ("none", "low", "medium", "high", "urgent")
 DEFAULT_STATES = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]
@@ -92,7 +94,17 @@ class Board:
 
     def init(self) -> None:
         with self.connect() as db:
-            db.executescript(SCHEMA)
+            version = db.execute("PRAGMA user_version").fetchone()[0]
+            if version > SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"database schema {version} is newer than supported schema {SCHEMA_VERSION}"
+                )
+            if version < 1:
+                db.executescript(f"BEGIN IMMEDIATE;\n{SCHEMA}\nPRAGMA user_version=1;\nCOMMIT;")
+
+    def schema_version(self) -> int:
+        with self.connect() as db:
+            return int(db.execute("PRAGMA user_version").fetchone()[0])
 
     @staticmethod
     def _hash(token: str) -> str:

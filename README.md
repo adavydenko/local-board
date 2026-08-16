@@ -15,7 +15,7 @@ The first release includes:
 - branch/commit/PR/MR references and issue-key matching for local branches;
 - authenticated human and agent identities;
 - an editable activity journal;
-- MCP over stdio and Streamable HTTP-compatible JSON-RPC at `/mcp`;
+- MCP over Streamable HTTP at `/mcp`;
 - a repository-local web board.
 
 Local Board deliberately does not reproduce Linear's entire product or API. Linear's MCP design was used as a product reference: expose focused, discoverable issue-management tools rather than leaking the database schema. The implementation uses standard MCP `initialize`, `tools/list`, and `tools/call` methods. Live verification against Linear's official documentation could not be completed in the development environment because outbound access returned HTTP 401/403; consequently this project claims MCP protocol interoperability, not tool-for-tool Linear compatibility.
@@ -23,15 +23,14 @@ Local Board deliberately does not reproduce Linear's entire product or API. Line
 ## Architecture
 
 ```text
-MCP clients ── stdio ─┐
-                      ├── domain service ── SQLite (WAL mode)
-Browser ─ HTTP API ───┤
-MCP clients ─ /mcp ───┘
+Agents ── Streamable HTTP MCP ─┐
+Browser ─────── HTTP API ──────┼── Local Board server ── SQLite (WAL mode)
+                               └── Web UI
 ```
 
-Each command opens a short SQLite transaction. WAL mode, a busy timeout, foreign keys, and uniqueness constraints make multiple local agent processes safe while keeping deployment to one ignored database file. Tokens are generated from cryptographic randomness and stored only as SHA-256 digests. The plaintext token is shown once.
+Each command opens a short SQLite transaction. WAL mode, a busy timeout, foreign keys, and uniqueness constraints provide the storage foundation for multiple local agent processes. Tokens are generated from cryptographic randomness and stored only as SHA-256 digests. The plaintext token is shown once.
 
-The database is stored at `.local-board/board.db` by default and the whole directory is ignored by Git. Attachments are repository-local path references; Local Board does not copy arbitrary files into its database.
+The single Local Board server owns `.local-board/state/board.db` in the repository by default. The runtime directory is ignored by Git; future project configuration and agent instructions in `.local-board/` remain trackable. `--db` and `LOCAL_BOARD_DB` override the database location. Agents never open SQLite directly: every worktree connects to the same server URL. Attachments are repository-local path references; Local Board does not copy arbitrary files into its database.
 
 ## Install in a repository
 
@@ -43,6 +42,7 @@ cd /path/to/your/repository
 local-board init
 local-board actor alice --kind human
 local-board actor coding-agent --kind agent
+local-board status
 ```
 
 Save each displayed token securely. Start the UI and HTTP MCP endpoint:
@@ -62,24 +62,14 @@ curl -X POST http://127.0.0.1:8765/api/projects \
 
 ## Connect an MCP agent
 
-For a stdio MCP client, add a server entry equivalent to:
+Start one server for the repository and configure every agent to use its HTTP MCP endpoint:
 
-```json
-{
-  "mcpServers": {
-    "local-board": {
-      "command": "local-board",
-      "args": ["mcp"],
-      "env": {
-        "LOCAL_BOARD_TOKEN": "<actor token>",
-        "LOCAL_BOARD_DB": "/absolute/repository/path/.local-board/board.db"
-      }
-    }
-  }
-}
+```text
+URL: http://127.0.0.1:8765/mcp
+Authorization: Bearer <actor token>
 ```
 
-Every agent should receive its own token so activity and authorship remain attributable. HTTP MCP clients can send JSON-RPC requests to `POST /mcp` with `Authorization: Bearer <token>`.
+Every agent should receive its own token so activity and authorship remain attributable. MCP clients send JSON-RPC to `POST /mcp` with `Authorization: Bearer <token>`, `Content-Type: application/json`, and `Accept: application/json, text/event-stream`. Local Board is sessionless and returns JSON responses; notifications receive HTTP 202.
 
 Available tools cover project and issue discovery, creation and update, workflow transitions, milestones, comments, checklists, labels, dependencies, attachment references, Git links, and activity. Use MCP `tools/list` for the authoritative schemas.
 
@@ -113,6 +103,8 @@ The server binds to `127.0.0.1` by default. Bearer tokens provide identity, not 
 The runtime has no third-party dependencies.
 
 ```bash
-python -m unittest discover -s tests -v
+python -m unittest discover -s tests/unit -v
+python -m unittest discover -s tests/integration -v
+python -m unittest discover -s tests/e2e -v
 python -m compileall -q local_board tests
 ```

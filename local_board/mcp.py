@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import sys
 from typing import Any
 
 from .db import Board
@@ -80,15 +79,3 @@ def handle(board: Board, actor: int, request: dict[str, Any]) -> dict[str, Any] 
     else:
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}
     return {"jsonrpc": "2.0", "id": request_id, "result": result}
-
-
-def serve_stdio(board: Board, token: str) -> None:
-    actor = board.authenticate(token)
-    if not actor: raise SystemExit("invalid LOCAL_BOARD_TOKEN")
-    for line in sys.stdin:
-        try:
-            response = handle(board, actor["id"], json.loads(line))
-            if response is not None:
-                print(json.dumps(response, ensure_ascii=False), flush=True)
-        except Exception as exc:
-            print(json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32603, "message": str(exc)}}), flush=True)

@@ -1,3 +1,7 @@
+.local-board/state/
+.local-board/backups/
+.local-board/attachments/
+.local-board/secrets/
 .local-board/
 __pycache__/
 *.py[cod]

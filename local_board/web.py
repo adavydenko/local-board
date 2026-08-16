@@ -18,6 +18,9 @@ def make_handler(board: Board):
             body = json.dumps(data, ensure_ascii=False, default=str).encode()
             self.send_response(status); self.send_header("Content-Type", "application/json; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
+        def _empty(self, status: int) -> None:
+            self.send_response(status); self.send_header("Content-Length", "0"); self.end_headers()
+
         def _actor(self):
             header = self.headers.get("Authorization", "")
             return board.authenticate(header[7:]) if header.startswith("Bearer ") else None
@@ -44,8 +47,17 @@ def make_handler(board: Board):
             try:
                 data = self._body(); path = urlparse(self.path).path
                 if path == "/mcp":
+                    content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip()
+                    accept = self.headers.get("Accept", "")
+                    if content_type != "application/json":
+                        return self._json(415, {"error": "MCP requires Content-Type: application/json"})
+                    if "application/json" not in accept or "text/event-stream" not in accept:
+                        return self._json(406, {"error": "MCP requires Accept: application/json, text/event-stream"})
+                    if isinstance(data, list):
+                        responses = [response for item in data if (response := handle(board, actor["id"], item)) is not None]
+                        return self._empty(202) if not responses else self._json(200, responses)
                     response = handle(board, actor["id"], data)
-                    return self._json(202 if response is None else 200, response or {})
+                    return self._empty(202) if response is None else self._json(200, response)
                 if path == "/api/projects": result = board.create_project(actor["id"], **data)
                 elif path == "/api/issues": result = board.create_issue(actor["id"], **data)
                 elif path.endswith("/transition"):
@@ -64,4 +76,3 @@ def make_handler(board: Board):
 def serve(board: Board, host: str = "127.0.0.1", port: int = 8765) -> None:
     print(f"Local Board: http://{host}:{port}")
     ThreadingHTTPServer((host, port), make_handler(board)).serve_forever()
-
