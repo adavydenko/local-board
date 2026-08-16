@@ -1,33 +1,36 @@
-"""Command line interface and stdio MCP transport."""
-import argparse, json, subprocess, sys
-from pathlib import Path
-from .db import Board, BoardError
-from .http import mcp_message, serve
+from __future__ import annotations
 
-def mcp_stdio(board):
- for line in sys.stdin:
-  try:
-   response=mcp_message(board,json.loads(line))
-   if response is not None: print(json.dumps(response),flush=True)
-  except Exception as e: print(json.dumps({"jsonrpc":"2.0","id":None,"error":{"code":-32602,"message":str(e)}}),flush=True)
+import argparse
+import os
+import subprocess
 
-def main(argv=None):
- p=argparse.ArgumentParser(); p.add_argument('--db',default='board.db'); sub=p.add_subparsers(dest='command',required=True)
- sub.add_parser('init'); a=sub.add_parser('actor'); a.add_argument('name'); a.add_argument('--token')
- s=sub.add_parser('sync-branch'); s.add_argument('--token'); s.add_argument('--project',type=int,required=True)
- h=sub.add_parser('serve'); h.add_argument('--host',default='127.0.0.1'); h.add_argument('--port',type=int,default=8000)
- sub.add_parser('mcp'); ns=p.parse_args(argv)
- try:
-  with Board(ns.db) as board:
-   if ns.command=='init': print(f"Initialized {ns.db}")
-   elif ns.command=='actor': print(json.dumps(board.create_actor(ns.name,ns.token)))
-   elif ns.command=='mcp': mcp_stdio(board)
-   elif ns.command=='serve': serve(board,ns.host,ns.port)
-   elif ns.command=='sync-branch':
-    branch=subprocess.check_output(['git','branch','--show-current'],text=True).strip(); sha=subprocess.check_output(['git','rev-parse','HEAD'],text=True).strip()
-    issue=next((x for x in board.issues(ns.project) if f"{x['id']}" in branch),None)
-    if not issue: raise BoardError("branch name must contain an issue id")
-    print(json.dumps(board.add_git_link(issue['id'],'commit',sha,ns.token)))
- except BoardError as e: p.error(str(e))
+from .db import Board
+from .mcp import serve_stdio
+from .web import serve
 
-if __name__=='__main__': main()
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="local-board")
+    parser.add_argument("--db", default=os.environ.get("LOCAL_BOARD_DB", ".local-board/board.db"))
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("init")
+    actor = sub.add_parser("actor"); actor.add_argument("name"); actor.add_argument("--kind", choices=("agent", "human"), default="agent")
+    web = sub.add_parser("serve"); web.add_argument("--host", default="127.0.0.1"); web.add_argument("--port", type=int, default=8765)
+    sub.add_parser("mcp")
+    sync = sub.add_parser("sync-branch"); sync.add_argument("--token", default=os.environ.get("LOCAL_BOARD_TOKEN"))
+    args = parser.parse_args(); board = Board(args.db); board.init()
+    if args.command == "init": print(f"Initialized {board.path}")
+    elif args.command == "actor":
+        value = board.create_actor(args.name, args.kind); print(f"Actor: {value['name']} ({value['kind']})\nToken (shown once): {value['token']}")
+    elif args.command == "serve": serve(board, args.host, args.port)
+    elif args.command == "mcp": serve_stdio(board, os.environ.get("LOCAL_BOARD_TOKEN", ""))
+    elif args.command == "sync-branch":
+        current = subprocess.run(["git", "branch", "--show-current"], check=True, text=True, capture_output=True).stdout.strip()
+        actor_data = board.authenticate(args.token or "")
+        if not actor_data: raise SystemExit("valid --token or LOCAL_BOARD_TOKEN required")
+        matches = [i for i in board.list_issues() if i["identifier"].lower() in current.lower()]
+        for issue in matches: board.add_related(actor_data["id"], issue["id"], "git_link", link_kind="branch", ref=current)
+        print(f"Linked branch {current!r} to {len(matches)} issue(s)")
+
+
+if __name__ == "__main__": main()

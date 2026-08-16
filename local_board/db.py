@@ -1,150 +1,279 @@
-"""Persistence and public domain API for local-board."""
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 import sqlite3
+from contextlib import contextmanager
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
-class BoardError(ValueError): pass
-class ValidationError(BoardError): pass
-class NotFound(BoardError): pass
-class AuthenticationError(BoardError): pass
+SCHEMA = """
+PRAGMA foreign_keys=ON;
+CREATE TABLE IF NOT EXISTS actors (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, kind TEXT NOT NULL CHECK(kind IN ('agent','human')),
+  token_hash TEXT UNIQUE, created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS projects (
+  id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS milestones (
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', due_at TEXT, created_at TEXT NOT NULL,
+  UNIQUE(project_id,name)
+);
+CREATE TABLE IF NOT EXISTS workflows (
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  issue_type TEXT NOT NULL, states_json TEXT NOT NULL, transitions_json TEXT NOT NULL,
+  UNIQUE(project_id,issue_type)
+);
+CREATE TABLE IF NOT EXISTS issues (
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  milestone_id INTEGER REFERENCES milestones(id) ON DELETE SET NULL, number INTEGER NOT NULL,
+  type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'medium', assignee_id INTEGER REFERENCES actors(id) ON DELETE SET NULL,
+  reviewer_id INTEGER REFERENCES actors(id) ON DELETE SET NULL, position REAL NOT NULL DEFAULT 0,
+  created_by INTEGER NOT NULL REFERENCES actors(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(project_id,number)
+);
+CREATE TABLE IF NOT EXISTS checklist_items (
+  id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  text TEXT NOT NULL, completed INTEGER NOT NULL DEFAULT 0, position REAL NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS comments (
+  id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE,
+  author_id INTEGER NOT NULL REFERENCES actors(id), body TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS labels (id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE, name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '#64748b', UNIQUE(project_id,name));
+CREATE TABLE IF NOT EXISTS issue_labels (issue_id INTEGER REFERENCES issues(id) ON DELETE CASCADE, label_id INTEGER REFERENCES labels(id) ON DELETE CASCADE, PRIMARY KEY(issue_id,label_id));
+CREATE TABLE IF NOT EXISTS dependencies (issue_id INTEGER REFERENCES issues(id) ON DELETE CASCADE, depends_on_id INTEGER REFERENCES issues(id) ON DELETE CASCADE, kind TEXT NOT NULL DEFAULT 'blocks', PRIMARY KEY(issue_id,depends_on_id,kind), CHECK(issue_id != depends_on_id));
+CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE, name TEXT NOT NULL, path TEXT NOT NULL, media_type TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS git_links (id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL REFERENCES issues(id) ON DELETE CASCADE, kind TEXT NOT NULL, ref TEXT NOT NULL, url TEXT, created_at TEXT NOT NULL, UNIQUE(issue_id,kind,ref));
+CREATE TABLE IF NOT EXISTS activity (
+  id INTEGER PRIMARY KEY, actor_id INTEGER REFERENCES actors(id) ON DELETE SET NULL, entity_type TEXT NOT NULL,
+  entity_id INTEGER NOT NULL, action TEXT NOT NULL, data_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_issues_project_status ON issues(project_id,status,position);
+CREATE INDEX IF NOT EXISTS idx_activity_entity ON activity(entity_type,entity_id,id DESC);
+"""
+
+ISSUE_TYPES = ("task", "bug", "feature", "chore", "epic")
+PRIORITIES = ("none", "low", "medium", "high", "urgent")
+DEFAULT_STATES = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]
+
+
+def now() -> str:
+    return datetime.now(UTC).isoformat()
 
 
 class Board:
-    """SQLite-backed board. Mutations require an actor token when actors exist."""
-    PRIORITIES = {"low", "medium", "high", "urgent"}
+    def __init__(self, path: str | Path = ".local-board/board.db"):
+        self.path = Path(path)
+        self.path.parent.mkdir(parents=True, exist_ok=True)
 
-    def __init__(self, path: str | Path = "board.db"):
-        self.path = str(path)
-        # HTTP handlers execute in worker threads; SQLite may safely share this
-        # connection because each mutation is committed as one short operation.
-        self.db = sqlite3.connect(self.path, check_same_thread=False)
-        self.db.row_factory = sqlite3.Row
-        self.db.execute("PRAGMA foreign_keys=ON")
-        self._schema()
+    @contextmanager
+    def connect(self) -> Iterator[sqlite3.Connection]:
+        db = sqlite3.connect(self.path, timeout=10)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys=ON")
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA busy_timeout=10000")
+        try:
+            yield db
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
 
-    def close(self): self.db.close()
-    def __enter__(self): return self
-    def __exit__(self, *_): self.close()
-
-    def _schema(self):
-        self.db.executescript("""
-        CREATE TABLE IF NOT EXISTS actors(id INTEGER PRIMARY KEY, name TEXT UNIQUE NOT NULL, token TEXT UNIQUE NOT NULL);
-        CREATE TABLE IF NOT EXISTS projects(id INTEGER PRIMARY KEY, key TEXT UNIQUE NOT NULL, name TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS milestones(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), name TEXT NOT NULL, UNIQUE(project_id,name));
-        CREATE TABLE IF NOT EXISTS workflows(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), name TEXT NOT NULL, states TEXT NOT NULL, transitions TEXT NOT NULL, UNIQUE(project_id,name));
-        CREATE TABLE IF NOT EXISTS issues(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '', status TEXT NOT NULL, priority TEXT NOT NULL, assignee_id INTEGER REFERENCES actors(id), milestone_id INTEGER REFERENCES milestones(id));
-        CREATE TABLE IF NOT EXISTS labels(id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id), name TEXT NOT NULL, color TEXT NOT NULL DEFAULT '#888888', UNIQUE(project_id,name));
-        CREATE TABLE IF NOT EXISTS issue_labels(issue_id INTEGER REFERENCES issues(id) ON DELETE CASCADE,label_id INTEGER REFERENCES labels(id) ON DELETE CASCADE,PRIMARY KEY(issue_id,label_id));
-        CREATE TABLE IF NOT EXISTS comments(id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL REFERENCES issues(id), body TEXT NOT NULL, actor_id INTEGER REFERENCES actors(id));
-        CREATE TABLE IF NOT EXISTS checklists(id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL REFERENCES issues(id), text TEXT NOT NULL, done INTEGER NOT NULL DEFAULT 0);
-        CREATE TABLE IF NOT EXISTS dependencies(issue_id INTEGER REFERENCES issues(id), depends_on INTEGER REFERENCES issues(id), PRIMARY KEY(issue_id,depends_on));
-        CREATE TABLE IF NOT EXISTS attachments(id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL REFERENCES issues(id), name TEXT NOT NULL, url TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS git_links(id INTEGER PRIMARY KEY, issue_id INTEGER NOT NULL REFERENCES issues(id), kind TEXT NOT NULL, ref TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY, actor_id INTEGER REFERENCES actors(id), action TEXT NOT NULL, entity TEXT NOT NULL, entity_id INTEGER NOT NULL, data TEXT NOT NULL DEFAULT '{}');
-        """)
-        self.db.commit()
+    def init(self) -> None:
+        with self.connect() as db:
+            db.executescript(SCHEMA)
 
     @staticmethod
-    def _id(value, what="id"):
-        if isinstance(value, bool) or not isinstance(value, int): raise ValidationError(f"{what} must be an integer")
-        return value
+    def _hash(token: str) -> str:
+        return hashlib.sha256(token.encode()).hexdigest()
 
-    def _one(self, table, ident):
-        row = self.db.execute(f"SELECT * FROM {table} WHERE id=?", (self._id(ident),)).fetchone()
-        if not row: raise NotFound(f"unknown {table.rstrip('s')}: {ident}")
+    def create_actor(self, name: str, kind: str = "agent") -> dict[str, Any]:
+        if kind not in ("agent", "human"):
+            raise ValueError("kind must be agent or human")
+        token = secrets.token_urlsafe(32)
+        with self.connect() as db:
+            cur = db.execute("INSERT INTO actors(name,kind,token_hash,created_at) VALUES(?,?,?,?)", (name, kind, self._hash(token), now()))
+            return {"id": cur.lastrowid, "name": name, "kind": kind, "token": token}
+
+    def authenticate(self, token: str) -> dict[str, Any] | None:
+        with self.connect() as db:
+            row = db.execute("SELECT id,name,kind FROM actors WHERE token_hash=?", (self._hash(token),)).fetchone()
+            return dict(row) if row else None
+
+    def _activity(self, db: sqlite3.Connection, actor: int | None, entity: str, entity_id: int, action: str, data: dict[str, Any] | None = None) -> None:
+        db.execute("INSERT INTO activity(actor_id,entity_type,entity_id,action,data_json,created_at) VALUES(?,?,?,?,?,?)", (actor, entity, entity_id, action, json.dumps(data or {}), now()))
+
+    def create_project(self, actor: int, key: str, name: str, description: str = "") -> dict[str, Any]:
+        key = key.upper()
+        if not key.isalnum() or not (2 <= len(key) <= 10):
+            raise ValueError("project key must be 2-10 alphanumeric characters")
+        stamp = now()
+        with self.connect() as db:
+            cur = db.execute("INSERT INTO projects(key,name,description,created_at,updated_at) VALUES(?,?,?,?,?)", (key, name, description, stamp, stamp))
+            pid = cur.lastrowid
+            transitions = [[DEFAULT_STATES[i], DEFAULT_STATES[i + 1]] for i in range(len(DEFAULT_STATES) - 2)] + [[s, "cancelled"] for s in DEFAULT_STATES[:-1]]
+            for issue_type in ISSUE_TYPES:
+                db.execute("INSERT INTO workflows(project_id,issue_type,states_json,transitions_json) VALUES(?,?,?,?)", (pid, issue_type, json.dumps(DEFAULT_STATES), json.dumps(transitions)))
+            self._activity(db, actor, "project", pid, "created", {"key": key})
+            return self.get_project(pid, db)
+
+    def get_project(self, project_id: int, db: sqlite3.Connection | None = None) -> dict[str, Any]:
+        if db is None:
+            with self.connect() as conn:
+                return self.get_project(project_id, conn)
+        row = db.execute("SELECT * FROM projects WHERE id=?", (project_id,)).fetchone()
+        if not row:
+            raise KeyError("project not found")
         return dict(row)
 
-    def _actor(self, token, required=True):
-        count = self.db.execute("SELECT count(*) FROM actors").fetchone()[0]
-        if not token and (required and count): raise AuthenticationError("actor token required")
-        if not token: return None
-        row = self.db.execute("SELECT * FROM actors WHERE token=?", (token,)).fetchone()
-        if not row: raise AuthenticationError("invalid actor token")
-        return dict(row)
+    def list_projects(self) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            return [dict(r) for r in db.execute("SELECT * FROM projects ORDER BY id")]
 
-    def _log(self, actor, action, entity, ident, data=None):
-        self.db.execute("INSERT INTO activity(actor_id,action,entity,entity_id,data) VALUES(?,?,?,?,?)", (actor and actor["id"],action,entity,ident,json.dumps(data or {})))
+    def create_milestone(self, actor: int, project_id: int, name: str, description: str = "", due_at: str | None = None) -> dict[str, Any]:
+        with self.connect() as db:
+            cur = db.execute("INSERT INTO milestones(project_id,name,description,due_at,created_at) VALUES(?,?,?,?,?)", (project_id, name, description, due_at, now()))
+            self._activity(db, actor, "milestone", cur.lastrowid, "created")
+            return dict(db.execute("SELECT * FROM milestones WHERE id=?", (cur.lastrowid,)).fetchone())
 
-    def _insert(self, sql, args, actor, action, entity):
-        try:
-            cur=self.db.execute(sql,args); ident=cur.lastrowid; self._log(actor,action,entity,ident); self.db.commit(); return ident
-        except sqlite3.IntegrityError as e: raise ValidationError(str(e)) from e
+    def set_workflow(self, actor: int, project_id: int, issue_type: str, states: list[str], transitions: list[list[str]]) -> dict[str, Any]:
+        if issue_type not in ISSUE_TYPES or not states or any(a not in states or b not in states for a, b in transitions):
+            raise ValueError("invalid workflow")
+        with self.connect() as db:
+            db.execute("INSERT INTO workflows(project_id,issue_type,states_json,transitions_json) VALUES(?,?,?,?) ON CONFLICT(project_id,issue_type) DO UPDATE SET states_json=excluded.states_json, transitions_json=excluded.transitions_json", (project_id, issue_type, json.dumps(states), json.dumps(transitions)))
+            self._activity(db, actor, "project", project_id, "workflow_changed", {"issue_type": issue_type})
+        return {"project_id": project_id, "issue_type": issue_type, "states": states, "transitions": transitions}
 
-    def create_actor(self, name, token=None):
-        if not isinstance(name,str) or not name.strip(): raise ValidationError("name must be a non-empty string")
-        token=token or secrets.token_urlsafe(24)
-        ident=self._insert("INSERT INTO actors(name,token) VALUES(?,?)",(name.strip(),token),None,"create","actor")
-        return {**self._one("actors",ident), "token": token}
-    def actors(self): return [dict(x) for x in self.db.execute("SELECT id,name FROM actors ORDER BY id")]
-    def get_actor(self, ident): return self._one("actors",ident)
+    def create_issue(self, actor: int, project_id: int, title: str, issue_type: str = "task", description: str = "", priority: str = "medium", milestone_id: int | None = None, assignee_id: int | None = None, reviewer_id: int | None = None) -> dict[str, Any]:
+        if issue_type not in ISSUE_TYPES or priority not in PRIORITIES:
+            raise ValueError("invalid issue type or priority")
+        with self.connect() as db:
+            wf = db.execute("SELECT states_json FROM workflows WHERE project_id=? AND issue_type=?", (project_id, issue_type)).fetchone()
+            if not wf:
+                raise KeyError("workflow not found")
+            status = json.loads(wf[0])[0]
+            number = db.execute("SELECT COALESCE(MAX(number),0)+1 FROM issues WHERE project_id=?", (project_id,)).fetchone()[0]
+            position = db.execute("SELECT COALESCE(MAX(position),0)+1 FROM issues WHERE project_id=? AND status=?", (project_id, status)).fetchone()[0]
+            stamp = now()
+            cur = db.execute("INSERT INTO issues(project_id,milestone_id,number,type,title,description,status,priority,assignee_id,reviewer_id,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (project_id, milestone_id, number, issue_type, title, description, status, priority, assignee_id, reviewer_id, position, actor, stamp, stamp))
+            self._activity(db, actor, "issue", cur.lastrowid, "created")
+            return self.get_issue(cur.lastrowid, db)
 
-    def create_project(self,key,name,token=None):
-        actor=self._actor(token); 
-        if not all(isinstance(x,str) and x.strip() for x in (key,name)): raise ValidationError("key and name must be strings")
-        i=self._insert("INSERT INTO projects(key,name) VALUES(?,?)",(key.upper(),name),actor,"create","project"); return self._one("projects",i)
-    def projects(self): return [dict(x) for x in self.db.execute("SELECT * FROM projects ORDER BY id")]
-    def get_project(self, ident): return self._one("projects",ident)
-    def create_milestone(self,project_id,name,token=None):
-        self._one("projects",project_id); actor=self._actor(token); i=self._insert("INSERT INTO milestones(project_id,name) VALUES(?,?)",(project_id,name),actor,"create","milestone"); return self._one("milestones",i)
-    def milestones(self,project_id=None): return self._list("milestones",project_id)
-    def create_workflow(self,project_id,name,states,transitions,token=None):
-        self._one("projects",project_id); actor=self._actor(token)
-        if not isinstance(states,list) or not states or not all(isinstance(x,str) for x in states): raise ValidationError("states must be a non-empty list of strings")
-        if not isinstance(transitions,list) or not all(isinstance(x,(list,tuple)) and len(x)==2 and x[0] in states and x[1] in states for x in transitions): raise ValidationError("invalid transitions")
-        i=self._insert("INSERT INTO workflows(project_id,name,states,transitions) VALUES(?,?,?,?)",(project_id,name,json.dumps(states),json.dumps(transitions)),actor,"create","workflow"); return self.get_workflow(i)
-    def get_workflow(self,i):
-        x=self._one("workflows",i); x["states"]=json.loads(x["states"]); x["transitions"]=json.loads(x["transitions"]); return x
-    def workflows(self,project_id=None): return [self.get_workflow(x["id"]) for x in self._rows("workflows",project_id)]
-    def _rows(self,table,project_id=None):
-        if project_id is None:return self.db.execute(f"SELECT * FROM {table} ORDER BY id")
-        self._one("projects",project_id); return self.db.execute(f"SELECT * FROM {table} WHERE project_id=? ORDER BY id",(project_id,))
-    def _list(self,table,project_id=None): return [dict(x) for x in self._rows(table,project_id)]
+    def get_issue(self, issue_id: int, db: sqlite3.Connection | None = None) -> dict[str, Any]:
+        if db is None:
+            with self.connect() as conn:
+                return self.get_issue(issue_id, conn)
+        row = db.execute("SELECT i.*,p.key, p.key || '-' || i.number AS identifier, a.name assignee, r.name reviewer FROM issues i JOIN projects p ON p.id=i.project_id LEFT JOIN actors a ON a.id=i.assignee_id LEFT JOIN actors r ON r.id=i.reviewer_id WHERE i.id=?", (issue_id,)).fetchone()
+        if not row:
+            raise KeyError("issue not found")
+        result = dict(row)
+        result["checklist"] = [dict(r) for r in db.execute("SELECT * FROM checklist_items WHERE issue_id=? ORDER BY position,id", (issue_id,))]
+        result["labels"] = [dict(r) for r in db.execute("SELECT l.* FROM labels l JOIN issue_labels il ON il.label_id=l.id WHERE il.issue_id=?", (issue_id,))]
+        return result
 
-    def create_issue(self,project_id,title,body="",priority="medium",status="todo",assignee_id=None,milestone_id=None,token=None):
-        self._one("projects",project_id); actor=self._actor(token)
-        if not isinstance(title,str) or not title.strip(): raise ValidationError("title must be a string")
-        if priority not in self.PRIORITIES: raise ValidationError("invalid priority")
-        if assignee_id is not None:self._one("actors",assignee_id)
-        if milestone_id is not None:self._one("milestones",milestone_id)
-        i=self._insert("INSERT INTO issues(project_id,title,body,status,priority,assignee_id,milestone_id) VALUES(?,?,?,?,?,?,?)",(project_id,title,body,status,priority,assignee_id,milestone_id),actor,"create","issue"); return self._one("issues",i)
-    def issues(self,project_id=None): return self._list("issues",project_id)
-    def get_issue(self,i): return self._one("issues",i)
-    def assign_issue(self,i,actor_id,token=None): self._one("actors",actor_id); return self._update_issue(i,"assignee_id",actor_id,"assign",token)
-    def transition_issue(self,i,status,token=None):
-        issue=self._one("issues",i); workflows=self.workflows(issue["project_id"])
-        if workflows and [issue["status"],status] not in workflows[0]["transitions"]: raise ValidationError("workflow transition is not allowed")
-        return self._update_issue(i,"status",status,"transition",token)
-    def _update_issue(self,i,column,value,action,token):
-        self._one("issues",i); actor=self._actor(token); self.db.execute(f"UPDATE issues SET {column}=? WHERE id=?",(value,i)); self._log(actor,action,"issue",i,{column:value}); self.db.commit(); return self._one("issues",i)
-    def create_label(self,project_id,name,color="#888888",token=None):
-        self._one("projects",project_id); actor=self._actor(token); i=self._insert("INSERT INTO labels(project_id,name,color) VALUES(?,?,?)",(project_id,name,color),actor,"create","label"); return self._one("labels",i)
-    def labels(self,project_id=None): return self._list("labels",project_id)
-    def add_label(self,issue_id,label_id,token=None):
-        self._one("issues",issue_id); self._one("labels",label_id); actor=self._actor(token); self._insert("INSERT INTO issue_labels(issue_id,label_id) VALUES(?,?)",(issue_id,label_id),actor,"label","issue"); return self.get_issue(issue_id)
-    def add_comment(self,issue_id,body,token=None):
-        self._one("issues",issue_id); actor=self._actor(token)
-        if not isinstance(body,str) or not body.strip(): raise ValidationError("body must be a non-empty string")
-        i=self._insert("INSERT INTO comments(issue_id,body,actor_id) VALUES(?,?,?)",(issue_id,body,actor and actor["id"]),actor,"comment","issue"); return self._one("comments",i)
-    def comments(self,issue_id): self._one("issues",issue_id); return [dict(x) for x in self.db.execute("SELECT * FROM comments WHERE issue_id=? ORDER BY id",(issue_id,))]
-    def add_checklist_item(self,issue_id,text,done=False,token=None): return self._child("checklists",issue_id,(text,int(done)),token,"checklist", "text,done")
-    def checklists(self,issue_id): return self._children("checklists",issue_id)
-    def add_dependency(self,issue_id,depends_on,token=None):
-        self._one("issues",issue_id); self._one("issues",depends_on)
-        if issue_id==depends_on: raise ValidationError("self-dependency is not allowed")
-        actor=self._actor(token); self._insert("INSERT INTO dependencies(issue_id,depends_on) VALUES(?,?)",(issue_id,depends_on),actor,"dependency","issue"); return {"issue_id":issue_id,"depends_on":depends_on}
-    def dependencies(self,issue_id): self._one("issues",issue_id); return [dict(x) for x in self.db.execute("SELECT * FROM dependencies WHERE issue_id=?",(issue_id,))]
-    def add_attachment(self,issue_id,name,url,token=None): return self._child("attachments",issue_id,(name,url),token,"attachment","name,url")
-    def attachments(self,issue_id): return self._children("attachments",issue_id)
-    def add_git_link(self,issue_id,kind,ref,token=None): return self._child("git_links",issue_id,(kind,ref),token,"git_link","kind,ref")
-    def git_links(self,issue_id): return self._children("git_links",issue_id)
-    def _child(self,table,issue_id,values,token,entity,columns):
-        self._one("issues",issue_id); actor=self._actor(token); qs=','.join('?' for _ in values); i=self._insert(f"INSERT INTO {table}(issue_id,{columns}) VALUES(?,{qs})",(issue_id,*values),actor,"create",entity); return self._one(table,i)
-    def _children(self,table,issue_id): self._one("issues",issue_id); return [dict(x) for x in self.db.execute(f"SELECT * FROM {table} WHERE issue_id=? ORDER BY id",(issue_id,))]
-    def activity(self):
-        return [dict(x) | {"data":json.loads(x["data"])} for x in self.db.execute("SELECT activity.*,actors.name actor_name FROM activity LEFT JOIN actors ON actors.id=activity.actor_id ORDER BY activity.id")]
-    def dashboard(self): return {"projects":len(self.projects()),"issues":len(self.issues()),"actors":len(self.actors())}
+    def list_issues(self, project_id: int | None = None, status: str | None = None, query: str | None = None) -> list[dict[str, Any]]:
+        sql = "SELECT i.id,i.number,i.project_id,i.type,i.title,i.status,i.priority,i.assignee_id,i.reviewer_id,i.position,p.key,p.key || '-' || i.number identifier FROM issues i JOIN projects p ON p.id=i.project_id WHERE 1=1"
+        args: list[Any] = []
+        if project_id is not None: sql += " AND i.project_id=?"; args.append(project_id)
+        if status: sql += " AND i.status=?"; args.append(status)
+        if query: sql += " AND (i.title LIKE ? OR i.description LIKE ?)"; args.extend([f"%{query}%", f"%{query}%"])
+        sql += " ORDER BY i.status,i.position,i.id"
+        with self.connect() as db:
+            return [dict(r) for r in db.execute(sql, args)]
+
+    def update_issue(self, actor: int, issue_id: int, **fields: Any) -> dict[str, Any]:
+        allowed = {"title", "description", "priority", "milestone_id", "assignee_id", "reviewer_id", "position"}
+        changes = {k: v for k, v in fields.items() if k in allowed}
+        if not changes:
+            return self.get_issue(issue_id)
+        if "priority" in changes and changes["priority"] not in PRIORITIES:
+            raise ValueError("invalid priority")
+        with self.connect() as db:
+            current = self.get_issue(issue_id, db)
+            changes["updated_at"] = now()
+            db.execute(f"UPDATE issues SET {','.join(f'{k}=?' for k in changes)} WHERE id=?", [*changes.values(), issue_id])
+            self._activity(db, actor, "issue", issue_id, "updated", {"before": {k: current.get(k) for k in changes}, "after": changes})
+            return self.get_issue(issue_id, db)
+
+    def transition_issue(self, actor: int, issue_id: int, status: str) -> dict[str, Any]:
+        with self.connect() as db:
+            issue = self.get_issue(issue_id, db)
+            wf = db.execute("SELECT states_json,transitions_json FROM workflows WHERE project_id=? AND issue_type=?", (issue["project_id"], issue["type"])).fetchone()
+            states, transitions = json.loads(wf[0]), json.loads(wf[1])
+            if status not in states or [issue["status"], status] not in transitions:
+                raise ValueError(f"transition {issue['status']} -> {status} is not allowed")
+            position = db.execute("SELECT COALESCE(MAX(position),0)+1 FROM issues WHERE project_id=? AND status=?", (issue["project_id"], status)).fetchone()[0]
+            db.execute("UPDATE issues SET status=?,position=?,updated_at=? WHERE id=?", (status, position, now(), issue_id))
+            self._activity(db, actor, "issue", issue_id, "transitioned", {"from": issue["status"], "to": status})
+            return self.get_issue(issue_id, db)
+
+    def add_related(self, actor: int, issue_id: int, kind: str, **data: Any) -> dict[str, Any]:
+        with self.connect() as db:
+            if kind == "comment":
+                stamp = now(); cur = db.execute("INSERT INTO comments(issue_id,author_id,body,created_at,updated_at) VALUES(?,?,?,?,?)", (issue_id, actor, data["body"], stamp, stamp))
+            elif kind == "checklist":
+                cur = db.execute("INSERT INTO checklist_items(issue_id,text,completed,position) VALUES(?,?,?,?)", (issue_id, data["text"], int(data.get("completed", False)), data.get("position", 0)))
+            elif kind == "attachment":
+                cur = db.execute("INSERT INTO attachments(issue_id,name,path,media_type,created_at) VALUES(?,?,?,?,?)", (issue_id, data["name"], data["path"], data.get("media_type"), now()))
+            elif kind == "dependency":
+                db.execute("INSERT INTO dependencies(issue_id,depends_on_id,kind) VALUES(?,?,?)", (issue_id, data["depends_on_id"], data.get("relation", "blocks"))); cur = type("Cursor", (), {"lastrowid": data["depends_on_id"]})()
+            elif kind == "git_link":
+                cur = db.execute("INSERT OR IGNORE INTO git_links(issue_id,kind,ref,url,created_at) VALUES(?,?,?,?,?)", (issue_id, data.get("link_kind", "branch"), data["ref"], data.get("url"), now()))
+            else:
+                raise ValueError("unsupported related item")
+            self._activity(db, actor, "issue", issue_id, f"{kind}_added", data)
+            return {"id": cur.lastrowid, "issue_id": issue_id, "kind": kind, **data}
+
+    def create_label(self, actor: int, project_id: int, name: str, color: str = "#64748b") -> dict[str, Any]:
+        with self.connect() as db:
+            cur = db.execute("INSERT INTO labels(project_id,name,color) VALUES(?,?,?)", (project_id, name, color))
+            self._activity(db, actor, "project", project_id, "label_created", {"name": name})
+            return {"id": cur.lastrowid, "project_id": project_id, "name": name, "color": color}
+
+    def add_label(self, actor: int, issue_id: int, label_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            db.execute("INSERT OR IGNORE INTO issue_labels(issue_id,label_id) VALUES(?,?)", (issue_id, label_id))
+            self._activity(db, actor, "issue", issue_id, "label_added", {"label_id": label_id})
+            return self.get_issue(issue_id, db)
+
+    def activity(self, entity_type: str | None = None, entity_id: int | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        sql = "SELECT x.*,a.name actor FROM activity x LEFT JOIN actors a ON a.id=x.actor_id WHERE 1=1"; args: list[Any] = []
+        if entity_type: sql += " AND entity_type=?"; args.append(entity_type)
+        if entity_id is not None: sql += " AND entity_id=?"; args.append(entity_id)
+        sql += " ORDER BY x.id DESC LIMIT ?"; args.append(limit)
+        with self.connect() as db:
+            rows = []
+            for r in db.execute(sql, args):
+                item = dict(r); item["data"] = json.loads(item.pop("data_json")); rows.append(item)
+            return rows
+
+    def update_activity(self, activity_id: int, action: str | None = None, data: dict[str, Any] | None = None) -> dict[str, Any]:
+        changes: list[str] = []; args: list[Any] = []
+        if action is not None: changes.append("action=?"); args.append(action)
+        if data is not None: changes.append("data_json=?"); args.append(json.dumps(data))
+        if not changes: raise ValueError("action or data is required")
+        with self.connect() as db:
+            args.append(activity_id); cur = db.execute(f"UPDATE activity SET {','.join(changes)} WHERE id=?", args)
+            if not cur.rowcount: raise KeyError("activity not found")
+            row = dict(db.execute("SELECT * FROM activity WHERE id=?", (activity_id,)).fetchone()); row["data"] = json.loads(row.pop("data_json")); return row
+
+    def delete_activity(self, activity_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            cur = db.execute("DELETE FROM activity WHERE id=?", (activity_id,))
+            if not cur.rowcount: raise KeyError("activity not found")
+            return {"deleted": True, "id": activity_id}
+
+    def dashboard(self) -> dict[str, Any]:
+        with self.connect() as db:
+            return {"projects": [dict(r) for r in db.execute("SELECT * FROM projects ORDER BY id")], "issues": self.list_issues(), "actors": [dict(r) for r in db.execute("SELECT id,name,kind FROM actors ORDER BY name")], "activity": self.activity(limit=30)}
