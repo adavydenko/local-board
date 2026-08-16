@@ -1,0 +1,58 @@
+name: Test suite
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-and-integration:
+    name: Python ${{ matrix.python }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install -e '.[test]'
+      - name: Run unit and integration tests
+        run: python -m pytest tests/unit tests/integration --cov-report=term-missing --cov-report=xml
+      - name: Upload coverage report
+        if: matrix.python == '3.13'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-python-3.13
+          path: coverage.xml
+
+  browser:
+    name: Browser E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: pip
+      - name: Install browser test dependencies
+        run: python -m pip install -e '.[test,e2e]'
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+      - name: Run agent workflow E2E
+        run: python -m pytest tests/e2e/test_agent_workflow.py -o addopts=''
+      - name: Run browser E2E
+        run: python -m pytest tests/e2e/test_browser.py -m browser -o addopts=''
