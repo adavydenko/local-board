@@ -30,6 +30,8 @@ class BootstrapAgentE2ETest(unittest.TestCase):
             )
             path = Repository.discover(repo).database_path
             self.assertIn(str(path), initialized.stdout)
+            self.assertTrue((repo / ".local-board" / "project.toml").exists())
+            self.assertIn(".local-board/state/", (repo / ".gitignore").read_text())
 
             actor_result = subprocess.run(
                 [sys.executable, "-m", "local_board.cli", "actor", "e2e-agent"],
@@ -43,7 +45,7 @@ class BootstrapAgentE2ETest(unittest.TestCase):
                 cwd=repo, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True,
             )
             calls = [
-                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "create_project", "arguments": {"key": "E2E", "name": "Product"}}},
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "list_projects", "arguments": {}}},
                 {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "create_issue", "arguments": {"project_id": 1, "title": "First agent task", "type": "task"}}},
             ]
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
@@ -62,5 +64,5 @@ class BootstrapAgentE2ETest(unittest.TestCase):
                 try: server.wait(timeout=3)
                 except subprocess.TimeoutExpired: server.kill(); server.wait(timeout=3)
             board = Board(path)
-            self.assertEqual(board.list_projects()[0]["key"], "E2E")
+            self.assertEqual(board.list_projects()[0]["key"], "PRODUCT")
             self.assertEqual(board.list_issues()[0]["title"], "First agent task")

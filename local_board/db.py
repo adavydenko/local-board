@@ -60,7 +60,29 @@ CREATE INDEX IF NOT EXISTS idx_issues_project_status ON issues(project_id,status
 CREATE INDEX IF NOT EXISTS idx_activity_entity ON activity(entity_type,entity_id,id DESC);
 """
 
-SCHEMA_VERSION = 1
+MIGRATION_2 = """
+ALTER TABLE projects ADD COLUMN managed_by TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE milestones ADD COLUMN key TEXT;
+ALTER TABLE milestones ADD COLUMN managed_by TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE workflows ADD COLUMN managed_by TEXT NOT NULL DEFAULT 'manual';
+ALTER TABLE labels ADD COLUMN key TEXT;
+ALTER TABLE labels ADD COLUMN managed_by TEXT NOT NULL DEFAULT 'manual';
+CREATE UNIQUE INDEX IF NOT EXISTS idx_milestones_project_key ON milestones(project_id,key) WHERE key IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_labels_project_key ON labels(project_id,key) WHERE key IS NOT NULL;
+CREATE TABLE IF NOT EXISTS config_applies (
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  digest TEXT NOT NULL, schema_version INTEGER NOT NULL, diff_json TEXT NOT NULL,
+  applied_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS project_config (
+  project_id INTEGER PRIMARY KEY REFERENCES projects(id) ON DELETE CASCADE,
+  digest TEXT NOT NULL, schema_version INTEGER NOT NULL, defaults_json TEXT NOT NULL DEFAULT '{}',
+  agent_policy_json TEXT NOT NULL DEFAULT '{}', applied_at TEXT NOT NULL
+);
+"""
+
+SCHEMA_VERSION = 2
+MIGRATIONS = {1: SCHEMA, 2: MIGRATION_2}
 
 ISSUE_TYPES = ("task", "bug", "feature", "chore", "epic")
 PRIORITIES = ("none", "low", "medium", "high", "urgent")
@@ -99,8 +121,11 @@ class Board:
                 raise RuntimeError(
                     f"database schema {version} is newer than supported schema {SCHEMA_VERSION}"
                 )
-            if version < 1:
-                db.executescript(f"BEGIN IMMEDIATE;\n{SCHEMA}\nPRAGMA user_version=1;\nCOMMIT;")
+            for target in range(version + 1, SCHEMA_VERSION + 1):
+                script = MIGRATIONS[target]
+                db.executescript(
+                    f"BEGIN IMMEDIATE;\n{script}\nPRAGMA user_version={target};\nCOMMIT;"
+                )
 
     def schema_version(self) -> int:
         with self.connect() as db:
@@ -163,14 +188,21 @@ class Board:
         if issue_type not in ISSUE_TYPES or not states or any(a not in states or b not in states for a, b in transitions):
             raise ValueError("invalid workflow")
         with self.connect() as db:
+            current = db.execute("SELECT managed_by FROM workflows WHERE project_id=? AND issue_type=?", (project_id, issue_type)).fetchone()
+            if current and current["managed_by"] == "config":
+                raise ValueError("workflow is managed by .local-board/project.toml")
             db.execute("INSERT INTO workflows(project_id,issue_type,states_json,transitions_json) VALUES(?,?,?,?) ON CONFLICT(project_id,issue_type) DO UPDATE SET states_json=excluded.states_json, transitions_json=excluded.transitions_json", (project_id, issue_type, json.dumps(states), json.dumps(transitions)))
             self._activity(db, actor, "project", project_id, "workflow_changed", {"issue_type": issue_type})
         return {"project_id": project_id, "issue_type": issue_type, "states": states, "transitions": transitions}
 
-    def create_issue(self, actor: int, project_id: int, title: str, issue_type: str = "task", description: str = "", priority: str = "medium", milestone_id: int | None = None, assignee_id: int | None = None, reviewer_id: int | None = None) -> dict[str, Any]:
-        if issue_type not in ISSUE_TYPES or priority not in PRIORITIES:
-            raise ValueError("invalid issue type or priority")
+    def create_issue(self, actor: int, project_id: int, title: str, issue_type: str | None = None, description: str = "", priority: str | None = None, milestone_id: int | None = None, assignee_id: int | None = None, reviewer_id: int | None = None) -> dict[str, Any]:
         with self.connect() as db:
+            configured = db.execute("SELECT defaults_json FROM project_config WHERE project_id=?", (project_id,)).fetchone()
+            defaults = json.loads(configured[0]) if configured else {}
+            issue_type = issue_type or defaults.get("issue_type", "task")
+            priority = priority or defaults.get("priority", "medium")
+            if issue_type not in ISSUE_TYPES or priority not in PRIORITIES:
+                raise ValueError("invalid issue type or priority")
             wf = db.execute("SELECT states_json FROM workflows WHERE project_id=? AND issue_type=?", (project_id, issue_type)).fetchone()
             if not wf:
                 raise KeyError("workflow not found")

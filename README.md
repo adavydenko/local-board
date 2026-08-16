@@ -40,6 +40,8 @@ Requires Python 3.11 or newer.
 python -m pip install -e /path/to/local-board
 cd /path/to/your/repository
 local-board init
+local-board config validate
+local-board config plan
 local-board actor alice --kind human
 local-board actor coding-agent --kind agent
 local-board status
@@ -51,7 +53,7 @@ Save each displayed token securely. Start the UI and HTTP MCP endpoint:
 local-board serve
 ```
 
-Open <http://127.0.0.1:8765> and enter an actor token. Create the first project through MCP, or with an HTTP call:
+`init` creates `.local-board/project.toml`, applies it to SQLite, and adds runtime-only paths to the target repository's `.gitignore`. Open <http://127.0.0.1:8765> and enter an actor token. Projects may also be created imperatively through MCP or HTTP when needed:
 
 ```bash
 curl -X POST http://127.0.0.1:8765/api/projects \
@@ -73,6 +75,49 @@ Every agent should receive its own token so activity and authorship remain attri
 
 Available tools cover project and issue discovery, creation and update, workflow transitions, milestones, comments, checklists, labels, dependencies, attachment references, Git links, and activity. Use MCP `tools/list` for the authoritative schemas.
 
+## Project as code
+
+`.local-board/project.toml` is the versioned desired state for project metadata, labels, defaults, and per-type workflows. Issues, comments, actors, tokens, activity, and Git links remain operational data in the ignored SQLite database.
+
+```toml
+schema_version = 1
+
+[project]
+key = "APP"
+name = "Application"
+description = ""
+
+[defaults]
+issue_type = "task"
+priority = "medium"
+
+[agent_policy]
+require_assignee_before_start = true
+require_reviewer_for = ["feature", "bug"]
+branch_pattern = "{issue_key}-{slug}"
+
+[[labels]]
+key = "backend"
+name = "Backend"
+color = "#64748b"
+
+[workflows.task]
+initial = "backlog"
+terminal = ["done", "cancelled"]
+states = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]
+transitions = [
+  ["backlog", "todo"],
+  ["todo", "in_progress"],
+  ["in_progress", "in_review"],
+  ["in_review", "in_progress"],
+  ["in_review", "done"],
+]
+```
+
+Use `local-board config validate` for syntax and semantic validation, `config plan` to inspect drift, and `config apply` to reconcile it atomically. Apply is non-destructive: entities omitted from TOML are not deleted. Config-managed workflows and labels have stable keys and every effective apply is recorded with its digest and diff. Removing a workflow state that is used by an issue is rejected.
+
+The configuration schema and SQLite schema are versioned independently. Commit `project.toml` to Git, but never commit `.local-board/state`, `backups`, `attachments`, or `secrets`.
+
 ## Workflows
 
 New projects get the following states for each issue type:
@@ -82,7 +127,7 @@ backlog → todo → in_progress → in_review → done
    └────────────── any active state ──────────→ cancelled
 ```
 
-Agents may replace states and allowed directed transitions with `set_workflow`. Invalid or skipped transitions are rejected transactionally.
+Manual projects may replace states and allowed directed transitions with `set_workflow`. Config-managed workflows must be changed in `project.toml` and reapplied; direct mutation is rejected. Invalid or skipped transitions are rejected transactionally.
 
 ## Git branch linking
 

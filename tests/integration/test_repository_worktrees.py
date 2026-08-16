@@ -54,4 +54,15 @@ class WorktreeIntegrationTest(unittest.TestCase):
         status = json.loads(result.stdout)
         self.assertEqual(Path(status["repository"]), self.root.resolve())
         self.assertEqual(Path(status["database"]), Repository.discover(self.root).database_path)
-        self.assertEqual(status["schema_version"], 1)
+        self.assertEqual(status["schema_version"], 2)
+
+    def test_init_creates_tracked_config_and_config_cli_is_idempotent(self):
+        env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
+        run(sys.executable, "-m", "local_board.cli", "init", cwd=self.root, env=env)
+        config = self.root / ".local-board" / "project.toml"
+        self.assertTrue(config.exists())
+        self.assertIn(".local-board/state/", (self.root / ".gitignore").read_text())
+        validated = run(sys.executable, "-m", "local_board.cli", "config", "validate", cwd=self.root, env=env)
+        self.assertIn("Valid:", validated.stdout)
+        planned = run(sys.executable, "-m", "local_board.cli", "config", "plan", cwd=self.root, env=env)
+        self.assertFalse(json.loads(planned.stdout)["changed"])

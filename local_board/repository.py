@@ -43,6 +43,10 @@ class Repository:
         """Runtime state owned by the server started for this checkout."""
         return self.root / ".local-board" / "state" / "board.db"
 
+    @property
+    def config_path(self) -> Path:
+        return self.root / ".local-board" / "project.toml"
+
 
 def resolve_database_path(
     cli_value: str | Path | None = None,
