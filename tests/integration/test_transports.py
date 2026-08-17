@@ -47,10 +47,10 @@ class HttpIntegrationTest(unittest.TestCase):
         status, response = self.request("/mcp", body={"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
         self.assertEqual(status, 200)
         self.assertGreater(len(response["result"]["tools"]), 10)
-        status, claimed = self.request("/mcp", body={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "claim_issue", "arguments": {"issue_id": issue["id"], "expected_revision": issue["revision"]}}})
+        status, claimed = self.request("/mcp", body={"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "claim_issue", "arguments": {"issue": issue["identifier"], "expected_revision": issue["revision"]}}})
         self.assertEqual(status, 200)
         self.assertEqual(claimed["result"]["structuredContent"]["assignee_id"], self.actor["id"])
-        status, stale = self.request("/mcp", body={"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "claim_issue", "arguments": {"issue_id": issue["id"], "expected_revision": issue["revision"]}}})
+        status, stale = self.request("/mcp", body={"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "claim_issue", "arguments": {"issue": issue["identifier"], "expected_revision": issue["revision"]}}})
         self.assertTrue(stale["result"]["isError"])
 
     def test_http_requires_a_valid_token(self):

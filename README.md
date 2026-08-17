@@ -75,6 +75,18 @@ Every agent should receive its own token so activity and authorship remain attri
 
 Available tools cover project and issue discovery, creation and update, workflow transitions, milestones, comments, checklists, labels, dependencies, attachment references, Git links, and activity. Use MCP `tools/list` for the authoritative schemas.
 
+### Agent MCP workflow
+
+The MCP contract is self-discovering and uses stable references instead of requiring agents to know SQLite IDs:
+
+1. Call `whoami`, then `list_projects` and `get_project_context` to discover identities, workflows, labels, milestones, defaults, and agent policy.
+2. Search with `list_issues`; fetch the complete Markdown description, discussion, checklist, blockers, attachments, Git links, activity, and allowed transitions with `get_issue_context` using an identifier such as `APP-12`.
+3. Call `claim_issue` with the current `revision`, update checklist items and comments while working, and attach dependencies or Git references as needed.
+4. Call `transition_issue` with the latest `revision`; stale mutations return a machine-readable `conflict` error and should be retried only after reading fresh context.
+5. Call `release_issue` if abandoning work.
+
+Tool input schemas include enums, defaults, constraints, and stable-reference descriptions. Tool errors expose `conflict`, `not_found`, or `invalid_request` codes in `structuredContent.error` instead of requiring agents to parse prose.
+
 ## Project as code
 
 `.local-board/project.toml` is the versioned desired state for project metadata, labels, defaults, and per-type workflows. Issues, comments, actors, tokens, activity, and Git links remain operational data in the ignored SQLite database.

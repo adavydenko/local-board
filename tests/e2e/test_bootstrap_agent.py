@@ -45,8 +45,11 @@ class BootstrapAgentE2ETest(unittest.TestCase):
                 cwd=repo, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True,
             )
             calls = [
-                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "list_projects", "arguments": {}}},
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "create_issue", "arguments": {"project_id": 1, "title": "First agent task", "type": "task"}}},
+                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "whoami", "arguments": {}}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "create_issue", "arguments": {"project": "PRODUCT", "title": "First agent task", "type": "task"}}},
+                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "claim_issue", "arguments": {"issue": "PRODUCT-1", "expected_revision": 1}}},
+                {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "add_comment", "arguments": {"issue": "PRODUCT-1", "body": "Started"}}},
+                {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "get_issue_context", "arguments": {"issue": "PRODUCT-1"}}},
             ]
             headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
             try:

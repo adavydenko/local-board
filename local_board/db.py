@@ -159,6 +159,35 @@ class Board:
             row = db.execute("SELECT id,name,kind FROM actors WHERE token_hash=?", (self._hash(token),)).fetchone()
             return dict(row) if row else None
 
+    def get_actor(self, actor: int | str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT id,name,kind,created_at FROM actors WHERE id=?" if isinstance(actor, int) else "SELECT id,name,kind,created_at FROM actors WHERE name=?", (actor,)).fetchone()
+            if not row: raise KeyError("actor not found")
+            return dict(row)
+
+    def list_actors(self) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            return [dict(row) for row in db.execute("SELECT id,name,kind,created_at FROM actors ORDER BY name")]
+
+    def resolve_project(self, project: int | str, db: sqlite3.Connection | None = None) -> int:
+        if db is None:
+            with self.connect() as conn: return self.resolve_project(project, conn)
+        row = db.execute("SELECT id FROM projects WHERE id=?" if isinstance(project, int) else "SELECT id FROM projects WHERE key=?", (project if isinstance(project, int) else project.upper(),)).fetchone()
+        if not row: raise KeyError("project not found")
+        return int(row[0])
+
+    def resolve_issue(self, issue: int | str, db: sqlite3.Connection | None = None) -> int:
+        if db is None:
+            with self.connect() as conn: return self.resolve_issue(issue, conn)
+        if isinstance(issue, int):
+            row = db.execute("SELECT id FROM issues WHERE id=?", (issue,)).fetchone()
+        else:
+            try: key, number = issue.upper().rsplit("-", 1); number = int(number)
+            except (ValueError, AttributeError) as exc: raise ValueError("issue identifier must look like APP-12") from exc
+            row = db.execute("SELECT i.id FROM issues i JOIN projects p ON p.id=i.project_id WHERE p.key=? AND i.number=?", (key, number)).fetchone()
+        if not row: raise KeyError("issue not found")
+        return int(row[0])
+
     def _activity(self, db: sqlite3.Connection, actor: int | None, entity: str, entity_id: int, action: str, data: dict[str, Any] | None = None) -> None:
         db.execute("INSERT INTO activity(actor_id,entity_type,entity_id,action,data_json,created_at) VALUES(?,?,?,?,?,?)", (actor, entity, entity_id, action, json.dumps(data or {}), now()))
 
@@ -175,6 +204,11 @@ class Board:
             "RETURNING next_position-1",
             (project_id, status),
         ).fetchone()[0])
+
+    @staticmethod
+    def _is_blocked(db: sqlite3.Connection, issue_id: int) -> bool:
+        rows = db.execute("SELECT target.status,w.transitions_json FROM dependencies d JOIN issues target ON target.id=d.depends_on_id JOIN workflows w ON w.project_id=target.project_id AND w.issue_type=target.type WHERE d.issue_id=? AND d.kind='blocks'", (issue_id,))
+        return any(any(source == row["status"] for source, _ in json.loads(row["transitions_json"])) for row in rows)
 
     def create_project(self, actor: int, key: str, name: str, description: str = "") -> dict[str, Any]:
         key = key.upper()
@@ -203,9 +237,23 @@ class Board:
         with self.connect() as db:
             return [dict(r) for r in db.execute("SELECT * FROM projects ORDER BY id")]
 
-    def create_milestone(self, actor: int, project_id: int, name: str, description: str = "", due_at: str | None = None) -> dict[str, Any]:
+    def project_context(self, project: int | str) -> dict[str, Any]:
         with self.connect() as db:
-            cur = db.execute("INSERT INTO milestones(project_id,name,description,due_at,created_at) VALUES(?,?,?,?,?)", (project_id, name, description, due_at, now()))
+            project_id = self.resolve_project(project, db)
+            result = self.get_project(project_id, db)
+            result["workflows"] = [{**dict(row), "states": json.loads(row["states_json"]), "transitions": json.loads(row["transitions_json"])} for row in db.execute("SELECT * FROM workflows WHERE project_id=? ORDER BY issue_type", (project_id,))]
+            for workflow in result["workflows"]: workflow.pop("states_json"); workflow.pop("transitions_json")
+            result["labels"] = [dict(row) for row in db.execute("SELECT * FROM labels WHERE project_id=? ORDER BY name", (project_id,))]
+            result["milestones"] = [dict(row) for row in db.execute("SELECT * FROM milestones WHERE project_id=? ORDER BY id", (project_id,))]
+            configured = db.execute("SELECT defaults_json,agent_policy_json,digest FROM project_config WHERE project_id=?", (project_id,)).fetchone()
+            result["defaults"] = json.loads(configured["defaults_json"]) if configured else {}
+            result["agent_policy"] = json.loads(configured["agent_policy_json"]) if configured else {}
+            result["config_digest"] = configured["digest"] if configured else None
+            return result
+
+    def create_milestone(self, actor: int, project_id: int, name: str, description: str = "", due_at: str | None = None, key: str | None = None) -> dict[str, Any]:
+        with self.connect() as db:
+            cur = db.execute("INSERT INTO milestones(project_id,key,name,description,due_at,created_at) VALUES(?,?,?,?,?,?)", (project_id, key, name, description, due_at, now()))
             self._activity(db, actor, "milestone", cur.lastrowid, "created")
             return dict(db.execute("SELECT * FROM milestones WHERE id=?", (cur.lastrowid,)).fetchone())
 
@@ -255,6 +303,29 @@ class Board:
         result["labels"] = [dict(r) for r in db.execute("SELECT l.* FROM labels l JOIN issue_labels il ON il.label_id=l.id WHERE il.issue_id=?", (issue_id,))]
         return result
 
+    def get_issue_context(self, issue: int | str) -> dict[str, Any]:
+        with self.connect() as db:
+            issue_id = self.resolve_issue(issue, db)
+            result = self.get_issue(issue_id, db)
+            result["comments"] = [dict(row) for row in db.execute("SELECT c.*,a.name author FROM comments c JOIN actors a ON a.id=c.author_id WHERE c.issue_id=? ORDER BY c.id", (issue_id,))]
+            result["dependencies"] = [dict(row) for row in db.execute("SELECT d.*,p.key || '-' || target.number identifier,target.title,target.status,target.type,w.transitions_json FROM dependencies d JOIN issues target ON target.id=d.depends_on_id JOIN projects p ON p.id=target.project_id JOIN workflows w ON w.project_id=target.project_id AND w.issue_type=target.type WHERE d.issue_id=?", (issue_id,))]
+            for dependency in result["dependencies"]:
+                transitions = json.loads(dependency.pop("transitions_json"))
+                dependency["completed"] = not any(source == dependency["status"] for source, _ in transitions)
+            result["blocked"] = any(dependency["kind"] == "blocks" and not dependency["completed"] for dependency in result["dependencies"])
+            result["dependents"] = [dict(row) for row in db.execute("SELECT d.*,p.key || '-' || source.number identifier,source.title FROM dependencies d JOIN issues source ON source.id=d.issue_id JOIN projects p ON p.id=source.project_id WHERE d.depends_on_id=?", (issue_id,))]
+            result["attachments"] = [dict(row) for row in db.execute("SELECT * FROM attachments WHERE issue_id=? ORDER BY id", (issue_id,))]
+            result["git_links"] = [dict(row) for row in db.execute("SELECT * FROM git_links WHERE issue_id=? ORDER BY id", (issue_id,))]
+            workflow = db.execute("SELECT states_json,transitions_json FROM workflows WHERE project_id=? AND issue_type=?", (result["project_id"], result["type"])).fetchone()
+            transitions = json.loads(workflow["transitions_json"])
+            result["available_transitions"] = [target for source, target in transitions if source == result["status"]]
+            configured = db.execute("SELECT agent_policy_json FROM project_config WHERE project_id=?", (result["project_id"],)).fetchone()
+            policy = json.loads(configured[0]) if configured else {}
+            if (result["blocked"] or (policy.get("require_assignee_before_start") and result["assignee_id"] is None)) and "in_progress" in result["available_transitions"]:
+                result["available_transitions"].remove("in_progress")
+            result["activity"] = self.activity("issue", issue_id)
+            return result
+
     def list_issues(self, project_id: int | None = None, status: str | None = None, query: str | None = None) -> list[dict[str, Any]]:
         sql = "SELECT i.id,i.number,i.project_id,i.type,i.title,i.status,i.priority,i.assignee_id,i.reviewer_id,i.position,i.revision,i.claimed_at,i.claim_expires_at,p.key,p.key || '-' || i.number identifier FROM issues i JOIN projects p ON p.id=i.project_id WHERE 1=1"
         args: list[Any] = []
@@ -300,6 +371,8 @@ class Board:
             policy = json.loads(policy_row[0]) if policy_row else {}
             if status == "in_progress" and policy.get("require_assignee_before_start") and issue["assignee_id"] is None:
                 raise ValueError("issue must be claimed or assigned before entering in_progress")
+            if status == "in_progress" and self._is_blocked(db, issue_id):
+                raise ValueError("issue is blocked by an incomplete dependency")
             expected_revision = issue["revision"] if expected_revision is None else expected_revision
             position = self._next_position(db, issue["project_id"], status)
             cur = db.execute("UPDATE issues SET status=?,position=?,revision=revision+1,updated_at=? WHERE id=? AND status=? AND revision=?", (status, position, now(), issue_id, issue["status"], expected_revision))
@@ -356,11 +429,77 @@ class Board:
             self._activity(db, actor, "issue", issue_id, f"{kind}_added", data)
             return {"id": cur.lastrowid, "issue_id": issue_id, "kind": kind, **data}
 
-    def create_label(self, actor: int, project_id: int, name: str, color: str = "#64748b") -> dict[str, Any]:
+    def update_checklist_item(self, actor: int, item_id: int, text: str | None = None, completed: bool | None = None) -> dict[str, Any]:
+        changes: dict[str, Any] = {}
+        if text is not None: changes["text"] = text
+        if completed is not None: changes["completed"] = int(completed)
+        if not changes: raise ValueError("text or completed is required")
         with self.connect() as db:
-            cur = db.execute("INSERT INTO labels(project_id,name,color) VALUES(?,?,?)", (project_id, name, color))
+            row = db.execute("SELECT issue_id FROM checklist_items WHERE id=?", (item_id,)).fetchone()
+            if not row: raise KeyError("checklist item not found")
+            db.execute(f"UPDATE checklist_items SET {','.join(f'{key}=?' for key in changes)} WHERE id=?", [*changes.values(), item_id])
+            self._activity(db, actor, "issue", row["issue_id"], "checklist_updated", {"item_id": item_id, **changes})
+            return dict(db.execute("SELECT * FROM checklist_items WHERE id=?", (item_id,)).fetchone())
+
+    def delete_checklist_item(self, actor: int, item_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT issue_id FROM checklist_items WHERE id=?", (item_id,)).fetchone()
+            if not row: raise KeyError("checklist item not found")
+            db.execute("DELETE FROM checklist_items WHERE id=?", (item_id,))
+            self._activity(db, actor, "issue", row["issue_id"], "checklist_deleted", {"item_id": item_id})
+            return {"deleted": True, "id": item_id}
+
+    def update_comment(self, actor: int, comment_id: int, body: str) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT issue_id FROM comments WHERE id=?", (comment_id,)).fetchone()
+            if not row: raise KeyError("comment not found")
+            db.execute("UPDATE comments SET body=?,updated_at=? WHERE id=?", (body, now(), comment_id))
+            self._activity(db, actor, "issue", row["issue_id"], "comment_updated", {"comment_id": comment_id})
+            return dict(db.execute("SELECT * FROM comments WHERE id=?", (comment_id,)).fetchone())
+
+    def delete_comment(self, actor: int, comment_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT issue_id FROM comments WHERE id=?", (comment_id,)).fetchone()
+            if not row: raise KeyError("comment not found")
+            db.execute("DELETE FROM comments WHERE id=?", (comment_id,))
+            self._activity(db, actor, "issue", row["issue_id"], "comment_deleted", {"comment_id": comment_id})
+            return {"deleted": True, "id": comment_id}
+
+    def remove_label(self, actor: int, issue_id: int, label_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            cur = db.execute("DELETE FROM issue_labels WHERE issue_id=? AND label_id=?", (issue_id, label_id))
+            if not cur.rowcount: raise KeyError("issue label not found")
+            self._activity(db, actor, "issue", issue_id, "label_removed", {"label_id": label_id})
+            return self.get_issue(issue_id, db)
+
+    def remove_dependency(self, actor: int, issue_id: int, depends_on_id: int, relation: str = "blocks") -> dict[str, Any]:
+        with self.connect() as db:
+            cur = db.execute("DELETE FROM dependencies WHERE issue_id=? AND depends_on_id=? AND kind=?", (issue_id, depends_on_id, relation))
+            if not cur.rowcount: raise KeyError("dependency not found")
+            self._activity(db, actor, "issue", issue_id, "dependency_removed", {"depends_on_id": depends_on_id, "relation": relation})
+            return {"deleted": True, "issue_id": issue_id, "depends_on_id": depends_on_id, "relation": relation}
+
+    def delete_attachment(self, actor: int, attachment_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT issue_id FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+            if not row: raise KeyError("attachment not found")
+            db.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
+            self._activity(db, actor, "issue", row["issue_id"], "attachment_deleted", {"attachment_id": attachment_id})
+            return {"deleted": True, "id": attachment_id}
+
+    def delete_git_link(self, actor: int, link_id: int) -> dict[str, Any]:
+        with self.connect() as db:
+            row = db.execute("SELECT issue_id FROM git_links WHERE id=?", (link_id,)).fetchone()
+            if not row: raise KeyError("git link not found")
+            db.execute("DELETE FROM git_links WHERE id=?", (link_id,))
+            self._activity(db, actor, "issue", row["issue_id"], "git_link_deleted", {"link_id": link_id})
+            return {"deleted": True, "id": link_id}
+
+    def create_label(self, actor: int, project_id: int, name: str, color: str = "#64748b", key: str | None = None) -> dict[str, Any]:
+        with self.connect() as db:
+            cur = db.execute("INSERT INTO labels(project_id,key,name,color) VALUES(?,?,?,?)", (project_id, key, name, color))
             self._activity(db, actor, "project", project_id, "label_created", {"name": name})
-            return {"id": cur.lastrowid, "project_id": project_id, "name": name, "color": color}
+            return {"id": cur.lastrowid, "project_id": project_id, "key": key, "name": name, "color": color}
 
     def add_label(self, actor: int, issue_id: int, label_id: int) -> dict[str, Any]:
         with self.connect() as db:
