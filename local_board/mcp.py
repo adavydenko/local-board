@@ -12,8 +12,10 @@ TOOLS = [
     ("list_issues", "Search and list issues", {"project_id": "integer", "status": "string", "query": "string"}),
     ("get_issue", "Get an issue with checklist and labels", {"issue_id": "integer"}),
     ("create_issue", "Create task, bug, feature, chore, or epic", {"project_id": "integer", "title": "string", "type": "string", "description": "string", "priority": "string", "milestone_id": "integer", "assignee_id": "integer", "reviewer_id": "integer"}),
-    ("update_issue", "Update issue fields", {"issue_id": "integer", "title": "string", "description": "string", "priority": "string", "milestone_id": "integer", "assignee_id": "integer", "reviewer_id": "integer", "position": "number"}),
-    ("transition_issue", "Move issue along its configured workflow", {"issue_id": "integer", "status": "string"}),
+    ("update_issue", "Update issue fields with optimistic concurrency", {"issue_id": "integer", "expected_revision": "integer", "title": "string", "description": "string", "priority": "string", "milestone_id": "integer", "assignee_id": "integer", "reviewer_id": "integer", "position": "number"}),
+    ("transition_issue", "Move issue along its configured workflow", {"issue_id": "integer", "status": "string", "expected_revision": "integer"}),
+    ("claim_issue", "Atomically claim an issue for the authenticated actor", {"issue_id": "integer", "expected_revision": "integer", "lease_seconds": "integer"}),
+    ("release_issue", "Release an issue claimed by the authenticated actor", {"issue_id": "integer", "expected_revision": "integer"}),
     ("create_milestone", "Create a project milestone", {"project_id": "integer", "name": "string", "description": "string", "due_at": "string"}),
     ("set_workflow", "Configure states and allowed transitions for an issue type", {"project_id": "integer", "issue_type": "string", "states": "array", "transitions": "array"}),
     ("add_comment", "Add a Markdown comment", {"issue_id": "integer", "body": "string"}),
@@ -31,7 +33,7 @@ TOOLS = [
 
 def schemas() -> list[dict[str, Any]]:
     result = []
-    required_by_tool = {"create_project": ["key", "name"], "get_issue": ["issue_id"], "create_issue": ["project_id", "title"], "update_issue": ["issue_id"], "transition_issue": ["issue_id", "status"], "create_milestone": ["project_id", "name"], "set_workflow": ["project_id", "issue_type", "states", "transitions"], "add_comment": ["issue_id", "body"], "add_checklist_item": ["issue_id", "text"], "add_dependency": ["issue_id", "depends_on_id"], "add_attachment": ["issue_id", "name", "path"], "create_label": ["project_id", "name"], "add_label": ["issue_id", "label_id"], "add_git_link": ["issue_id", "ref"], "update_activity": ["activity_id"], "delete_activity": ["activity_id"]}
+    required_by_tool = {"create_project": ["key", "name"], "get_issue": ["issue_id"], "create_issue": ["project_id", "title"], "update_issue": ["issue_id", "expected_revision"], "transition_issue": ["issue_id", "status", "expected_revision"], "claim_issue": ["issue_id", "expected_revision"], "release_issue": ["issue_id", "expected_revision"], "create_milestone": ["project_id", "name"], "set_workflow": ["project_id", "issue_type", "states", "transitions"], "add_comment": ["issue_id", "body"], "add_checklist_item": ["issue_id", "text"], "add_dependency": ["issue_id", "depends_on_id"], "add_attachment": ["issue_id", "name", "path"], "create_label": ["project_id", "name"], "add_label": ["issue_id", "label_id"], "add_git_link": ["issue_id", "ref"], "update_activity": ["activity_id"], "delete_activity": ["activity_id"]}
     for name, description, props in TOOLS:
         result.append({"name": name, "description": description, "inputSchema": {"type": "object", "properties": {k: {"type": v} for k, v in props.items()}, "required": required_by_tool.get(name, []), "additionalProperties": False}})
     return result
@@ -48,6 +50,8 @@ def call_tool(board: Board, actor: int, name: str, args: dict[str, Any]) -> Any:
     if name == "update_issue":
         issue_id = args.pop("issue_id"); return board.update_issue(actor, issue_id, **args)
     if name == "transition_issue": return board.transition_issue(actor, **args)
+    if name == "claim_issue": return board.claim_issue(actor, **args)
+    if name == "release_issue": return board.release_issue(actor, **args)
     if name == "create_milestone": return board.create_milestone(actor, **args)
     if name == "set_workflow": return board.set_workflow(actor, **args)
     if name.startswith("add_") and name.removeprefix("add_") in {"comment", "checklist_item", "dependency", "attachment", "git_link"}:

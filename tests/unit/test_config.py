@@ -54,6 +54,17 @@ class ConfigTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "managed by"):
             self.board.set_workflow(actor["id"], 1, "task", ["todo", "done"], [["todo", "done"]])
 
+    def test_agent_policy_requires_claim_before_in_progress(self):
+        ConfigService(self.board).apply(load_config(self.path))
+        actor = self.board.create_actor("policy-agent")
+        issue = self.board.create_issue(actor["id"], 1, "Policy guarded")
+        issue = self.board.transition_issue(actor["id"], issue["id"], "todo", issue["revision"])
+        with self.assertRaisesRegex(ValueError, "claimed or assigned"):
+            self.board.transition_issue(actor["id"], issue["id"], "in_progress", issue["revision"])
+        issue = self.board.claim_issue(actor["id"], issue["id"], issue["revision"])
+        issue = self.board.transition_issue(actor["id"], issue["id"], "in_progress", issue["revision"])
+        self.assertEqual(issue["status"], "in_progress")
+
     def test_validation_rejects_unreachable_state(self):
         self.path.write_text(self.path.read_text().replace('states = ["backlog",', 'states = ["orphan", "backlog",', 1))
         with self.assertRaisesRegex(ConfigError, "unreachable states"):

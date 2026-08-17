@@ -5,7 +5,7 @@ import json
 import secrets
 import sqlite3
 from contextlib import contextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS actors (
 );
 CREATE TABLE IF NOT EXISTS projects (
   id INTEGER PRIMARY KEY, key TEXT NOT NULL UNIQUE, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+  next_issue_number INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL, updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS milestones (
@@ -36,6 +37,7 @@ CREATE TABLE IF NOT EXISTS issues (
   type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
   priority TEXT NOT NULL DEFAULT 'medium', assignee_id INTEGER REFERENCES actors(id) ON DELETE SET NULL,
   reviewer_id INTEGER REFERENCES actors(id) ON DELETE SET NULL, position REAL NOT NULL DEFAULT 0,
+  revision INTEGER NOT NULL DEFAULT 1, claimed_at TEXT, claim_expires_at TEXT,
   created_by INTEGER NOT NULL REFERENCES actors(id), created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
   UNIQUE(project_id,number)
 );
@@ -55,6 +57,11 @@ CREATE TABLE IF NOT EXISTS git_links (id INTEGER PRIMARY KEY, issue_id INTEGER N
 CREATE TABLE IF NOT EXISTS activity (
   id INTEGER PRIMARY KEY, actor_id INTEGER REFERENCES actors(id) ON DELETE SET NULL, entity_type TEXT NOT NULL,
   entity_id INTEGER NOT NULL, action TEXT NOT NULL, data_json TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS state_counters (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  status TEXT NOT NULL, next_position INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY(project_id,status)
 );
 CREATE INDEX IF NOT EXISTS idx_issues_project_status ON issues(project_id,status,position);
 CREATE INDEX IF NOT EXISTS idx_activity_entity ON activity(entity_type,entity_id,id DESC);
@@ -87,6 +94,10 @@ MIGRATIONS = {1: SCHEMA, 2: MIGRATION_2}
 ISSUE_TYPES = ("task", "bug", "feature", "chore", "epic")
 PRIORITIES = ("none", "low", "medium", "high", "urgent")
 DEFAULT_STATES = ["backlog", "todo", "in_progress", "in_review", "done", "cancelled"]
+
+
+class ConflictError(ValueError):
+    """A write was based on stale state or lost an atomic claim race."""
 
 
 def now() -> str:
@@ -151,6 +162,20 @@ class Board:
     def _activity(self, db: sqlite3.Connection, actor: int | None, entity: str, entity_id: int, action: str, data: dict[str, Any] | None = None) -> None:
         db.execute("INSERT INTO activity(actor_id,entity_type,entity_id,action,data_json,created_at) VALUES(?,?,?,?,?,?)", (actor, entity, entity_id, action, json.dumps(data or {}), now()))
 
+    @staticmethod
+    def _assert_milestone_project(db: sqlite3.Connection, milestone_id: int | None, project_id: int) -> None:
+        if milestone_id is not None and not db.execute("SELECT 1 FROM milestones WHERE id=? AND project_id=?", (milestone_id, project_id)).fetchone():
+            raise ValueError("milestone belongs to another project or does not exist")
+
+    @staticmethod
+    def _next_position(db: sqlite3.Connection, project_id: int, status: str) -> int:
+        return int(db.execute(
+            "INSERT INTO state_counters(project_id,status,next_position) VALUES(?,?,2) "
+            "ON CONFLICT(project_id,status) DO UPDATE SET next_position=next_position+1 "
+            "RETURNING next_position-1",
+            (project_id, status),
+        ).fetchone()[0])
+
     def create_project(self, actor: int, key: str, name: str, description: str = "") -> dict[str, Any]:
         key = key.upper()
         if not key.isalnum() or not (2 <= len(key) <= 10):
@@ -197,6 +222,7 @@ class Board:
 
     def create_issue(self, actor: int, project_id: int, title: str, issue_type: str | None = None, description: str = "", priority: str | None = None, milestone_id: int | None = None, assignee_id: int | None = None, reviewer_id: int | None = None) -> dict[str, Any]:
         with self.connect() as db:
+            self._assert_milestone_project(db, milestone_id, project_id)
             configured = db.execute("SELECT defaults_json FROM project_config WHERE project_id=?", (project_id,)).fetchone()
             defaults = json.loads(configured[0]) if configured else {}
             issue_type = issue_type or defaults.get("issue_type", "task")
@@ -207,8 +233,11 @@ class Board:
             if not wf:
                 raise KeyError("workflow not found")
             status = json.loads(wf[0])[0]
-            number = db.execute("SELECT COALESCE(MAX(number),0)+1 FROM issues WHERE project_id=?", (project_id,)).fetchone()[0]
-            position = db.execute("SELECT COALESCE(MAX(position),0)+1 FROM issues WHERE project_id=? AND status=?", (project_id, status)).fetchone()[0]
+            allocated = db.execute("UPDATE projects SET next_issue_number=next_issue_number+1 WHERE id=? RETURNING next_issue_number-1", (project_id,)).fetchone()
+            if not allocated:
+                raise KeyError("project not found")
+            number = allocated[0]
+            position = self._next_position(db, project_id, status)
             stamp = now()
             cur = db.execute("INSERT INTO issues(project_id,milestone_id,number,type,title,description,status,priority,assignee_id,reviewer_id,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (project_id, milestone_id, number, issue_type, title, description, status, priority, assignee_id, reviewer_id, position, actor, stamp, stamp))
             self._activity(db, actor, "issue", cur.lastrowid, "created")
@@ -227,7 +256,7 @@ class Board:
         return result
 
     def list_issues(self, project_id: int | None = None, status: str | None = None, query: str | None = None) -> list[dict[str, Any]]:
-        sql = "SELECT i.id,i.number,i.project_id,i.type,i.title,i.status,i.priority,i.assignee_id,i.reviewer_id,i.position,p.key,p.key || '-' || i.number identifier FROM issues i JOIN projects p ON p.id=i.project_id WHERE 1=1"
+        sql = "SELECT i.id,i.number,i.project_id,i.type,i.title,i.status,i.priority,i.assignee_id,i.reviewer_id,i.position,i.revision,i.claimed_at,i.claim_expires_at,p.key,p.key || '-' || i.number identifier FROM issues i JOIN projects p ON p.id=i.project_id WHERE 1=1"
         args: list[Any] = []
         if project_id is not None: sql += " AND i.project_id=?"; args.append(project_id)
         if status: sql += " AND i.status=?"; args.append(status)
@@ -237,29 +266,74 @@ class Board:
             return [dict(r) for r in db.execute(sql, args)]
 
     def update_issue(self, actor: int, issue_id: int, **fields: Any) -> dict[str, Any]:
+        expected_revision = fields.pop("expected_revision", None)
         allowed = {"title", "description", "priority", "milestone_id", "assignee_id", "reviewer_id", "position"}
         changes = {k: v for k, v in fields.items() if k in allowed}
         if not changes:
             return self.get_issue(issue_id)
         if "priority" in changes and changes["priority"] not in PRIORITIES:
             raise ValueError("invalid priority")
+        if "assignee_id" in changes:
+            changes["claimed_at"] = None
+            changes["claim_expires_at"] = None
         with self.connect() as db:
             current = self.get_issue(issue_id, db)
+            if "milestone_id" in changes:
+                self._assert_milestone_project(db, changes["milestone_id"], current["project_id"])
+            expected_revision = current["revision"] if expected_revision is None else expected_revision
             changes["updated_at"] = now()
-            db.execute(f"UPDATE issues SET {','.join(f'{k}=?' for k in changes)} WHERE id=?", [*changes.values(), issue_id])
+            changes["revision"] = current["revision"] + 1
+            cur = db.execute(f"UPDATE issues SET {','.join(f'{k}=?' for k in changes)} WHERE id=? AND revision=?", [*changes.values(), issue_id, expected_revision])
+            if not cur.rowcount:
+                raise ConflictError(f"issue revision conflict: expected {expected_revision}")
             self._activity(db, actor, "issue", issue_id, "updated", {"before": {k: current.get(k) for k in changes}, "after": changes})
             return self.get_issue(issue_id, db)
 
-    def transition_issue(self, actor: int, issue_id: int, status: str) -> dict[str, Any]:
+    def transition_issue(self, actor: int, issue_id: int, status: str, expected_revision: int | None = None) -> dict[str, Any]:
         with self.connect() as db:
             issue = self.get_issue(issue_id, db)
             wf = db.execute("SELECT states_json,transitions_json FROM workflows WHERE project_id=? AND issue_type=?", (issue["project_id"], issue["type"])).fetchone()
             states, transitions = json.loads(wf[0]), json.loads(wf[1])
             if status not in states or [issue["status"], status] not in transitions:
                 raise ValueError(f"transition {issue['status']} -> {status} is not allowed")
-            position = db.execute("SELECT COALESCE(MAX(position),0)+1 FROM issues WHERE project_id=? AND status=?", (issue["project_id"], status)).fetchone()[0]
-            db.execute("UPDATE issues SET status=?,position=?,updated_at=? WHERE id=?", (status, position, now(), issue_id))
+            policy_row = db.execute("SELECT agent_policy_json FROM project_config WHERE project_id=?", (issue["project_id"],)).fetchone()
+            policy = json.loads(policy_row[0]) if policy_row else {}
+            if status == "in_progress" and policy.get("require_assignee_before_start") and issue["assignee_id"] is None:
+                raise ValueError("issue must be claimed or assigned before entering in_progress")
+            expected_revision = issue["revision"] if expected_revision is None else expected_revision
+            position = self._next_position(db, issue["project_id"], status)
+            cur = db.execute("UPDATE issues SET status=?,position=?,revision=revision+1,updated_at=? WHERE id=? AND status=? AND revision=?", (status, position, now(), issue_id, issue["status"], expected_revision))
+            if not cur.rowcount:
+                raise ConflictError(f"issue transition conflict: expected revision {expected_revision}")
             self._activity(db, actor, "issue", issue_id, "transitioned", {"from": issue["status"], "to": status})
+            return self.get_issue(issue_id, db)
+
+    def claim_issue(self, actor: int, issue_id: int, expected_revision: int, lease_seconds: int = 1800) -> dict[str, Any]:
+        if not 60 <= lease_seconds <= 86400:
+            raise ValueError("lease_seconds must be between 60 and 86400")
+        stamp = datetime.now(UTC)
+        expires = stamp + timedelta(seconds=lease_seconds)
+        with self.connect() as db:
+            cur = db.execute(
+                "UPDATE issues SET assignee_id=?,claimed_at=?,claim_expires_at=?,revision=revision+1,updated_at=? "
+                "WHERE id=? AND revision=? AND (assignee_id IS NULL OR assignee_id=? OR (claim_expires_at IS NOT NULL AND claim_expires_at<=?))",
+                (actor, stamp.isoformat(), expires.isoformat(), stamp.isoformat(), issue_id, expected_revision, actor, stamp.isoformat()),
+            )
+            if not cur.rowcount:
+                raise ConflictError(f"issue claim conflict: expected revision {expected_revision}")
+            self._activity(db, actor, "issue", issue_id, "claimed", {"lease_seconds": lease_seconds})
+            return self.get_issue(issue_id, db)
+
+    def release_issue(self, actor: int, issue_id: int, expected_revision: int) -> dict[str, Any]:
+        with self.connect() as db:
+            cur = db.execute(
+                "UPDATE issues SET assignee_id=NULL,claimed_at=NULL,claim_expires_at=NULL,revision=revision+1,updated_at=? "
+                "WHERE id=? AND revision=? AND assignee_id=?",
+                (now(), issue_id, expected_revision, actor),
+            )
+            if not cur.rowcount:
+                raise ConflictError(f"issue release conflict: expected revision {expected_revision}")
+            self._activity(db, actor, "issue", issue_id, "released")
             return self.get_issue(issue_id, db)
 
     def add_related(self, actor: int, issue_id: int, kind: str, **data: Any) -> dict[str, Any]:
@@ -271,6 +345,9 @@ class Board:
             elif kind == "attachment":
                 cur = db.execute("INSERT INTO attachments(issue_id,name,path,media_type,created_at) VALUES(?,?,?,?,?)", (issue_id, data["name"], data["path"], data.get("media_type"), now()))
             elif kind == "dependency":
+                projects = db.execute("SELECT id,project_id FROM issues WHERE id IN (?,?)", (issue_id, data["depends_on_id"])).fetchall()
+                if len(projects) != 2 or len({row["project_id"] for row in projects}) != 1:
+                    raise ValueError("dependencies must connect issues in the same project")
                 db.execute("INSERT INTO dependencies(issue_id,depends_on_id,kind) VALUES(?,?,?)", (issue_id, data["depends_on_id"], data.get("relation", "blocks"))); cur = type("Cursor", (), {"lastrowid": data["depends_on_id"]})()
             elif kind == "git_link":
                 cur = db.execute("INSERT OR IGNORE INTO git_links(issue_id,kind,ref,url,created_at) VALUES(?,?,?,?,?)", (issue_id, data.get("link_kind", "branch"), data["ref"], data.get("url"), now()))
@@ -287,6 +364,9 @@ class Board:
 
     def add_label(self, actor: int, issue_id: int, label_id: int) -> dict[str, Any]:
         with self.connect() as db:
+            valid = db.execute("SELECT 1 FROM issues i JOIN labels l ON l.project_id=i.project_id WHERE i.id=? AND l.id=?", (issue_id, label_id)).fetchone()
+            if not valid:
+                raise ValueError("label belongs to another project or does not exist")
             db.execute("INSERT OR IGNORE INTO issue_labels(issue_id,label_id) VALUES(?,?)", (issue_id, label_id))
             self._activity(db, actor, "issue", issue_id, "label_added", {"label_id": label_id})
             return self.get_issue(issue_id, db)

@@ -129,6 +129,14 @@ backlog → todo → in_progress → in_review → done
 
 Manual projects may replace states and allowed directed transitions with `set_workflow`. Config-managed workflows must be changed in `project.toml` and reapplied; direct mutation is rejected. Invalid or skipped transitions are rejected transactionally.
 
+## Concurrent agents
+
+Issues carry a monotonically increasing `revision`. Mutation and transition tools accept `expected_revision`; a stale writer receives a conflict instead of silently overwriting another agent's work. Issue identifiers and board positions use transactional counters rather than `MAX(...) + 1`, so concurrent threads and server requests cannot allocate the same value.
+
+Agents should call `claim_issue` before starting work. Claiming atomically assigns the authenticated actor and creates a renewable lease (30 minutes by default); only one actor can claim a given revision. Use `release_issue` to clear a claim. Projects whose `agent_policy.require_assignee_before_start` is enabled reject transitions into `in_progress` until an issue is claimed or assigned.
+
+SQLite still serializes writes internally. Local Board uses WAL mode and a busy timeout, while optimistic revisions protect domain data from lost updates. The concurrency suite exercises simultaneous threads and independent processes and finishes with SQLite integrity and foreign-key checks.
+
 ## Git branch linking
 
 Include an issue identifier such as `APP-12` in the branch name and run:
