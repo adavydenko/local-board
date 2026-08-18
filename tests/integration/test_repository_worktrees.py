@@ -62,7 +62,13 @@ class WorktreeIntegrationTest(unittest.TestCase):
         config = self.root / ".local-board" / "project.toml"
         self.assertTrue(config.exists())
         self.assertIn(".local-board/state/", (self.root / ".gitignore").read_text())
+        self.assertTrue((self.root / ".local-board" / "AGENT.md").exists())
+        self.assertTrue((self.root / ".agents" / "skills" / "local-board" / "SKILL.md").exists())
         validated = run(sys.executable, "-m", "local_board.cli", "config", "validate", cwd=self.root, env=env)
         self.assertIn("Valid:", validated.stdout)
         planned = run(sys.executable, "-m", "local_board.cli", "config", "plan", cwd=self.root, env=env)
         self.assertFalse(json.loads(planned.stdout)["changed"])
+        doctor = run(sys.executable, "-m", "local_board.cli", "doctor", "--offline", "--json", cwd=self.root, env=env)
+        diagnosis = json.loads(doctor.stdout)
+        self.assertTrue(diagnosis["ok"])
+        self.assertEqual({item["name"]: item["status"] for item in diagnosis["checks"]}["agent_skill"], "pass")

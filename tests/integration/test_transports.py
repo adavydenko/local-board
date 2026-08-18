@@ -8,6 +8,8 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from local_board.db import Board
+from local_board.config import ConfigService, default_config, load_config
+from local_board.doctor import run_doctor
 from local_board.web import make_handler
 
 
@@ -71,3 +73,13 @@ class HttpIntegrationTest(unittest.TestCase):
         with self.assertRaises(HTTPError) as caught:
             urlopen(request, timeout=3)
         self.assertEqual(caught.exception.code, 406)
+
+    def test_online_doctor_checks_auth_initialize_and_tools(self):
+        config_path = Path(self.tmp.name) / "project.toml"
+        config_path.write_text(default_config("HTTP", "DHTTP"))
+        ConfigService(self.board).apply(load_config(config_path))
+        result = run_doctor(self.board, config_path, url=self.url + "/mcp", token=self.actor["token"])
+        self.assertTrue(result["ok"])
+        statuses = {item["name"]: item["status"] for item in result["checks"]}
+        self.assertEqual(statuses["mcp_initialize"], "pass")
+        self.assertEqual(statuses["mcp_tools"], "pass")

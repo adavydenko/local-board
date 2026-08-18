@@ -13,5 +13,4 @@ dependencies = []
 local-board = "local_board.cli:main"
 
 [tool.setuptools.package-data]
-local_board = ["static/*"]
-
+local_board = ["static/*", "templates/*"]

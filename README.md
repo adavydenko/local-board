@@ -45,6 +45,7 @@ local-board config plan
 local-board actor alice --kind human
 local-board actor coding-agent --kind agent
 local-board status
+local-board doctor --offline
 ```
 
 Save each displayed token securely. Start the UI and HTTP MCP endpoint:
@@ -74,6 +75,8 @@ Authorization: Bearer <actor token>
 Every agent should receive its own token so activity and authorship remain attributable. MCP clients send JSON-RPC to `POST /mcp` with `Authorization: Bearer <token>`, `Content-Type: application/json`, and `Accept: application/json, text/event-stream`. Local Board is sessionless and returns JSON responses; notifications receive HTTP 202.
 
 Available tools cover project and issue discovery, creation and update, workflow transitions, milestones, comments, checklists, labels, dependencies, attachment references, Git links, and activity. Use MCP `tools/list` for the authoritative schemas.
+
+`local-board init` also installs `.local-board/AGENT.md` and a repository-local skill at `.agents/skills/local-board/`. Separate onboarding is available in [the human guide](docs/human-guide.md), [the agent guide](docs/agent-guide.md), and [the operations guide](docs/operations.md).
 
 ### Agent MCP workflow
 
