@@ -1,0 +1,9 @@
+.local-board/state/
+.local-board/backups/
+.local-board/attachments/
+.local-board/secrets/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+dist/
+*.egg-info/
