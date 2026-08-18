@@ -4,10 +4,19 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-board"
-version = "0.1.0"
+version = "0.0.1"
 description = "Repository-local issue tracker with MCP and a lightweight web UI"
+readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
+keywords = ["coding-agents", "issue-tracker", "local-first", "mcp"]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Environment :: Web Environment",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Bug Tracking",
+]
 
 [project.scripts]
 local-board = "local_board.cli:main"
