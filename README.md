@@ -78,6 +78,12 @@ Available tools cover project and issue discovery, creation and update, workflow
 
 `local-board init` also installs `.local-board/AGENT.md` and a repository-local skill at `.agents/skills/local-board/`. Separate onboarding is available in [the human guide](docs/human-guide.md), [the agent guide](docs/agent-guide.md), and [the operations guide](docs/operations.md).
 
+## Human web UI
+
+The local UI renders columns from the selected project's configured workflows rather than a fixed status list. Humans can filter issue types, open complete issue context, claim or release work, assign assignees and reviewers, change priority, complete checklist items, comment, and perform only policy-aware transitions. Project and activity views provide repository-level oversight.
+
+The UI uses stable issue routes such as `/api/issues/APP-12`. REST mutations honor optimistic revisions and return HTTP `409` for stale writes. The same `Board` domain methods back REST and MCP, so workflow, blocking dependency, assignment, and revision rules remain consistent across human and agent clients.
+
 ### Agent MCP workflow
 
 The MCP contract is self-discovering and uses stable references instead of requiring agents to know SQLite IDs:

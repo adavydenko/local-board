@@ -38,6 +38,12 @@ class HttpIntegrationTest(unittest.TestCase):
         with urlopen(Request(self.url + path, data=data, headers=headers), timeout=3) as response:
             return response.status, json.load(response)
 
+    def method(self, method, path, body=None):
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {self.actor['token']}"}
+        request = Request(self.url + path, data=json.dumps(body or {}).encode(), headers=headers, method=method)
+        with urlopen(request, timeout=3) as response:
+            return response.status, json.load(response)
+
     def test_authenticated_http_and_mcp_lifecycle(self):
         status, project = self.request("/api/projects", body={"key": "HTTP", "name": "HTTP project"})
         self.assertEqual(status, 201)
@@ -59,6 +65,28 @@ class HttpIntegrationTest(unittest.TestCase):
         with self.assertRaises(HTTPError) as caught:
             self.request("/api/dashboard", token=False)
         self.assertEqual(caught.exception.code, 401)
+
+    def test_human_rest_lifecycle_uses_stable_issue_routes(self):
+        _, project = self.request("/api/projects", body={"key": "HUM", "name": "Human UI"})
+        _, issue = self.request("/api/issues", body={"project": "HUM", "title": "Review through UI"})
+        status, context = self.request("/api/issues/HUM-1")
+        self.assertEqual(status, 200)
+        self.assertEqual(context["identifier"], "HUM-1")
+        status, updated = self.method("PATCH", "/api/issues/HUM-1", {"expected_revision": issue["revision"], "priority": "high", "reviewer_id": self.actor["id"]})
+        self.assertEqual((status, updated["priority"]), (200, "high"))
+        _, comment = self.request("/api/issues/HUM-1/comments", body={"body": "Needs review"})
+        _, checklist = self.request("/api/issues/HUM-1/checklist", body={"text": "Verify behavior"})
+        _, checked = self.method("PATCH", f"/api/checklist/{checklist['id']}", {"completed": True})
+        self.assertEqual(checked["completed"], 1)
+        _, edited = self.method("PATCH", f"/api/comments/{comment['id']}", {"body": "Reviewed"})
+        self.assertEqual(edited["body"], "Reviewed")
+        _, moved = self.request("/api/issues/HUM-1/transition", body={"status": "todo", "expected_revision": updated["revision"]})
+        self.assertEqual(moved["status"], "todo")
+        with self.assertRaises(HTTPError) as stale:
+            self.method("PATCH", "/api/issues/HUM-1", {"expected_revision": issue["revision"], "title": "stale"})
+        self.assertEqual(stale.exception.code, 409)
+        self.method("DELETE", f"/api/comments/{comment['id']}")
+
 
     def test_mcp_notification_returns_empty_accepted_response(self):
         headers = {"Authorization": f"Bearer {self.actor['token']}", "Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
