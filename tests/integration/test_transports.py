@@ -66,6 +66,16 @@ class HttpIntegrationTest(unittest.TestCase):
             self.request("/api/dashboard", token=False)
         self.assertEqual(caught.exception.code, 401)
 
+    def test_viewer_can_read_but_cannot_mutate_rest(self):
+        viewer = self.board.create_actor("http-viewer", role="viewer")
+        headers = {"Authorization": f"Bearer {viewer['token']}", "Content-Type": "application/json"}
+        with urlopen(Request(self.url + "/api/dashboard", headers=headers), timeout=3) as response:
+            self.assertEqual(response.status, 200)
+        request = Request(self.url + "/api/projects", data=json.dumps({"key": "DENY", "name": "Denied"}).encode(), headers=headers)
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(request, timeout=3)
+        self.assertEqual(caught.exception.code, 403)
+
     def test_human_rest_lifecycle_uses_stable_issue_routes(self):
         _, project = self.request("/api/projects", body={"key": "HUM", "name": "Human UI"})
         _, issue = self.request("/api/issues", body={"project": "HUM", "title": "Review through UI"})

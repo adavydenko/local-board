@@ -72,3 +72,15 @@ class WorktreeIntegrationTest(unittest.TestCase):
         diagnosis = json.loads(doctor.stdout)
         self.assertTrue(diagnosis["ok"])
         self.assertEqual({item["name"]: item["status"] for item in diagnosis["checks"]}["agent_skill"], "pass")
+
+    def test_cli_backup_and_guarded_restore(self):
+        env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
+        run(sys.executable, "-m", "local_board.cli", "init", cwd=self.root, env=env)
+        backup = self.root / ".local-board" / "backups" / "manual.db"
+        created = json.loads(run(sys.executable, "-m", "local_board.cli", "backup", str(backup), cwd=self.root, env=env).stdout)
+        self.assertEqual(created["format"], "local-board-backup-v1")
+        self.assertTrue(Path(str(backup) + ".json").exists())
+        guarded = subprocess.run([sys.executable, "-m", "local_board.cli", "restore", str(backup)], cwd=self.root, env=env, capture_output=True, text=True)
+        self.assertNotEqual(guarded.returncode, 0)
+        restored = json.loads(run(sys.executable, "-m", "local_board.cli", "restore", str(backup), "--force", cwd=self.root, env=env).stdout)
+        self.assertTrue(restored["restored"])

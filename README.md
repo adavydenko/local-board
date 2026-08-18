@@ -14,7 +14,7 @@ The first release includes:
 - checklists, labels, attachment references, and issue dependencies;
 - branch/commit/PR/MR references and issue-key matching for local branches;
 - authenticated human and agent identities;
-- an editable activity journal;
+- an immutable append-only activity audit log;
 - MCP over Streamable HTTP at `/mcp`;
 - a repository-local web board.
 
@@ -170,7 +170,21 @@ This records the current branch against every matching issue. PR/MR URLs can lat
 
 ## Security boundaries
 
-The server binds to `127.0.0.1` by default. Bearer tokens provide identity, not fine-grained authorization: every valid actor currently has full board access. Do not expose the server to an untrusted network. Markdown is rendered as plain text in the MVP UI, avoiding script injection. Activity entries are stored as ordinary rows and can be corrected or deleted through explicit MCP tools because the requested journal is editable.
+The server binds to `127.0.0.1` by default. Every actor has an `admin`, `member`, or read-only `viewer` role; the first actor is the bootstrap admin and later actors default to member. Admins can change roles with `set_actor_role`, and the last admin cannot be demoted. Tokens are still local bearer credentials, so do not expose the server to an untrusted network. Activity is append-only and protected by SQLite triggers as well as the domain API.
+
+## Releases and recovery
+
+Project releases follow `planned → active → released` or may be cancelled before release. Agents can use `list_releases`, `create_release`, and `transition_release`; transitions use optimistic revisions just like issues. A release can be associated with issues through its local `release_id`.
+
+Create a consistent online SQLite snapshot with `local-board backup [path]`. Each backup receives a JSON manifest containing its format, schema version, byte size, and SHA-256 checksum. Restore validates the checksum, SQLite integrity, and required Local Board tables before atomically replacing state:
+
+```bash
+local-board backup
+local-board restore .local-board/backups/board-20260818T120000Z.db --force
+```
+
+Restore automatically writes a pre-restore safety backup when current state exists.
+Stop `local-board serve` before restoring so no process retains a connection to the replaced database.
 
 ## Development
 

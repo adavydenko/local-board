@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -27,8 +28,30 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(len(self.board.get_issue(issue["id"])["checklist"]), 1)
         self.assertGreaterEqual(len(self.board.activity("issue", issue["id"])), 4)
         event = self.board.activity("issue", issue["id"])[0]
-        self.assertEqual(self.board.update_activity(event["id"], action="corrected")["action"], "corrected")
-        self.assertTrue(self.board.delete_activity(event["id"])["deleted"])
+        with self.assertRaisesRegex(PermissionError, "immutable"):
+            self.board.update_activity(event["id"], action="corrected")
+        with self.assertRaisesRegex(PermissionError, "immutable"):
+            self.board.delete_activity(event["id"])
+        with self.assertRaisesRegex(sqlite3.IntegrityError, "append-only"):
+            with self.board.connect() as db:
+                db.execute("DELETE FROM activity WHERE id=?", (event["id"],))
+
+    def test_roles_and_release_lifecycle(self):
+        self.assertEqual(self.actor["role"], "admin")
+        viewer = self.board.create_actor("observer", role="viewer")
+        member = self.board.create_actor("builder")
+        self.assertEqual(member["role"], "member")
+        promoted = self.board.set_actor_role(self.actor["id"], viewer["id"], "member")
+        self.assertEqual(promoted["role"], "member")
+        with self.assertRaises(ValueError):
+            self.board.set_actor_role(self.actor["id"], self.actor["id"], "viewer")
+        project = self.board.create_project(self.actor["id"], "REL", "Releases")
+        release = self.board.create_release(self.actor["id"], project["id"], "August", "1.0.0")
+        active = self.board.transition_release(self.actor["id"], release["id"], "active", release["revision"])
+        shipped = self.board.transition_release(self.actor["id"], release["id"], "released", active["revision"])
+        self.assertIsNotNone(shipped["released_at"])
+        with self.assertRaises(ValueError):
+            self.board.transition_release(self.actor["id"], release["id"], "active", shipped["revision"])
 
     def test_rejects_invalid_transition(self):
         project = self.board.create_project(self.actor["id"], "WEB", "Web")

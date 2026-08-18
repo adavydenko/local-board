@@ -4,9 +4,11 @@ import argparse
 import json
 import os
 import subprocess
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .config import ConfigError, ConfigService, default_config, load_config, suggested_key
+from .backup import create_backup, restore_backup
 from .db import Board
 from .doctor import run_doctor
 from .onboarding import install_onboarding
@@ -20,10 +22,12 @@ def main() -> None:
     parser.add_argument("--config", help="project config path (defaults to .local-board/project.toml)")
     sub = parser.add_subparsers(dest="command", required=True)
     initialize = sub.add_parser("init"); initialize.add_argument("--force", action="store_true")
-    actor = sub.add_parser("actor"); actor.add_argument("name"); actor.add_argument("--kind", choices=("agent", "human"), default="agent")
+    actor = sub.add_parser("actor"); actor.add_argument("name"); actor.add_argument("--kind", choices=("agent", "human"), default="agent"); actor.add_argument("--role", choices=("admin", "member", "viewer"))
     web = sub.add_parser("serve"); web.add_argument("--host", default="127.0.0.1"); web.add_argument("--port", type=int, default=8765)
     sync = sub.add_parser("sync-branch"); sync.add_argument("--token", default=os.environ.get("LOCAL_BOARD_TOKEN"))
     status = sub.add_parser("status"); status.add_argument("--json", action="store_true")
+    backup = sub.add_parser("backup"); backup.add_argument("path", nargs="?")
+    restore = sub.add_parser("restore"); restore.add_argument("path"); restore.add_argument("--force", action="store_true")
     doctor = sub.add_parser("doctor"); doctor.add_argument("--url", default="http://127.0.0.1:8765/mcp"); doctor.add_argument("--token", default=os.environ.get("LOCAL_BOARD_TOKEN")); doctor.add_argument("--offline", action="store_true"); doctor.add_argument("--json", action="store_true")
     config_parser = sub.add_parser("config")
     config_sub = config_parser.add_subparsers(dest="config_command", required=True)
@@ -49,7 +53,7 @@ def main() -> None:
         result = ConfigService(board).apply(load_config(config_path))
         print(f"Initialized {board.path}; applied {len(result['actions'])} configuration action(s)")
     elif args.command == "actor":
-        value = board.create_actor(args.name, args.kind); print(f"Actor: {value['name']} ({value['kind']})\nToken (shown once): {value['token']}")
+        value = board.create_actor(args.name, args.kind, args.role); print(f"Actor: {value['name']} ({value['kind']}, {value['role']})\nToken (shown once): {value['token']}")
     elif args.command == "serve": serve(board, args.host, args.port)
     elif args.command == "status":
         try:
@@ -60,6 +64,14 @@ def main() -> None:
         if args.json: print(json.dumps(value))
         else:
             for key, value_item in value.items(): print(f"{key}: {value_item}")
+    elif args.command == "backup":
+        destination = Path(args.path).resolve() if args.path else board.path.parent.parent / "backups" / f"board-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.db"
+        print(json.dumps(create_backup(board, destination), indent=2))
+    elif args.command == "restore":
+        if not args.force: raise SystemExit("restore replaces current state; pass --force")
+        safety = board.path.parent.parent / "backups" / f"pre-restore-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.db"
+        if board.path.exists(): create_backup(board, safety)
+        print(json.dumps(restore_backup(board, args.path), indent=2))
     elif args.command == "doctor":
         result = run_doctor(board, config_path, url=args.url, token=args.token, online=not args.offline)
         if args.json: print(json.dumps(result, indent=2))

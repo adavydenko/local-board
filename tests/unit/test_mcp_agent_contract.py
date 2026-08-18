@@ -84,3 +84,13 @@ class AgentContractTest(unittest.TestCase):
         self.assertIn("oneOf", tools["get_issue_context"]["inputSchema"]["properties"]["issue"])
         self.assertEqual(tools["create_issue"]["inputSchema"]["properties"]["priority"]["enum"], ["none", "low", "medium", "high", "urgent"])
         self.assertIn("expected_revision", tools["transition_issue"]["inputSchema"]["required"])
+
+    def test_viewer_is_read_only_and_activity_tools_are_immutable(self):
+        viewer = self.board.create_actor("audit-viewer", role="viewer")
+        names = {tool["name"] for tool in schemas()}
+        self.assertNotIn("update_activity", names)
+        self.assertNotIn("delete_activity", names)
+        response = handle(self.board, viewer["id"], {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "create_project", "arguments": {"key": "NOPE", "name": "Denied"}}})
+        self.assertEqual(response["result"]["structuredContent"]["error"]["code"], "forbidden")
+        read = handle(self.board, viewer["id"], {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "list_projects", "arguments": {}}})
+        self.assertFalse(read["result"].get("isError", False))

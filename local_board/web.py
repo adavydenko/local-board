@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .db import Board, ConflictError
+from .db import AuthorizationError, Board, ConflictError
 from .mcp import handle
 
 
@@ -38,6 +38,7 @@ def make_handler(board: Board):
 
         def _error(self, exc: Exception) -> None:
             if isinstance(exc, ConflictError): status, code = HTTPStatus.CONFLICT, "conflict"
+            elif isinstance(exc, AuthorizationError): status, code = HTTPStatus.FORBIDDEN, "forbidden"
             elif isinstance(exc, KeyError): status, code = HTTPStatus.NOT_FOUND, "not_found"
             elif isinstance(exc, (ValueError, TypeError, json.JSONDecodeError)): status, code = HTTPStatus.BAD_REQUEST, "invalid_request"
             else: raise exc
@@ -85,7 +86,13 @@ def make_handler(board: Board):
                         return self._empty(202) if not responses else self._json(200, responses)
                     response = handle(board, actor["id"], data)
                     return self._empty(202) if response is None else self._json(200, response)
+                board.require_role(actor["id"], "admin", "member")
                 if parts == ["api", "projects"]: result = board.create_project(actor["id"], **data)
+                elif parts == ["api", "releases"]:
+                    if "project" in data: data["project_id"] = board.resolve_project(data.pop("project"))
+                    result = board.create_release(actor["id"], **data)
+                elif len(parts) == 4 and parts[:2] == ["api", "releases"] and parts[3] == "transition":
+                    result = board.transition_release(actor["id"], int(parts[2]), **data)
                 elif parts == ["api", "issues"]:
                     if "project" in data: data["project_id"] = board.resolve_project(data.pop("project"))
                     result = board.create_issue(actor["id"], **data)
@@ -108,6 +115,7 @@ def make_handler(board: Board):
             actor = self._require_actor()
             if not actor: return
             try:
+                board.require_role(actor["id"], "admin", "member")
                 data = self._body(); parts, _ = self._route()
                 if len(parts) == 3 and parts[:2] == ["api", "issues"]: result = board.update_issue(actor["id"], board.resolve_issue(parts[2]), **data)
                 elif len(parts) == 3 and parts[:2] == ["api", "comments"]: result = board.update_comment(actor["id"], int(parts[2]), **data)
@@ -120,6 +128,7 @@ def make_handler(board: Board):
             actor = self._require_actor()
             if not actor: return
             try:
+                board.require_role(actor["id"], "admin", "member")
                 data = self._body(); parts, _ = self._route()
                 if len(parts) == 3 and parts[:2] == ["api", "comments"]: result = board.delete_comment(actor["id"], int(parts[2]))
                 elif len(parts) == 3 and parts[:2] == ["api", "checklist"]: result = board.delete_checklist_item(actor["id"], int(parts[2]))

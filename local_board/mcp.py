@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .db import Board, ConflictError, ISSUE_TYPES, PRIORITIES
+from .db import AuthorizationError, Board, ConflictError, ISSUE_TYPES, PRIORITIES
 
 
 ISSUE_REF = {"description": "Stable issue identifier such as APP-12, or a local numeric ID", "oneOf": [{"type": "string", "pattern": "^[A-Za-z0-9]{2,10}-[1-9][0-9]*$"}, {"type": "integer", "minimum": 1}]}
@@ -21,17 +21,21 @@ def tool(name: str, description: str, properties: dict[str, Any] | None = None, 
 TOOLS = [
     tool("whoami", "Return the authenticated actor identity."),
     tool("list_actors", "List human and agent identities available for assignment."),
+    tool("set_actor_role", "Change an actor role. Admin only.", {"actor": {"oneOf": [{"type": "string"}, {"type": "integer"}]}, "role": {"type": "string", "enum": ["admin", "member", "viewer"]}}, ["actor", "role"]),
     tool("list_projects", "List projects."),
     tool("get_project_context", "Get project metadata, workflows, labels, milestones, defaults, and agent policy.", {"project": PROJECT_REF}, ["project"]),
     tool("list_workflows", "List workflows configured for a project.", {"project": PROJECT_REF}, ["project"]),
     tool("list_labels", "List labels configured for a project.", {"project": PROJECT_REF}, ["project"]),
     tool("list_milestones", "List milestones configured for a project.", {"project": PROJECT_REF}, ["project"]),
+    tool("list_releases", "List project releases and lifecycle state.", {"project": PROJECT_REF}, ["project"]),
+    tool("create_release", "Create a planned project release.", {"project": PROJECT_REF, "name": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1}, "description": {"type": "string"}, "target_at": {"type": "string"}}, ["project", "name", "version"]),
+    tool("transition_release", "Move a release through planned, active, released, or cancelled.", {"release_id": {"type": "integer", "minimum": 1}, "status": {"type": "string", "enum": ["active", "released", "cancelled"]}, "expected_revision": {"type": "integer", "minimum": 1}}, ["release_id", "status", "expected_revision"]),
     tool("create_project", "Create a manually managed project.", {"key": {"type": "string", "pattern": "^[A-Za-z0-9]{2,10}$"}, "name": {"type": "string", "minLength": 1}, "description": {"type": "string", "default": ""}}, ["key", "name"]),
     tool("list_issues", "Search issues and return summaries including stable identifiers and revisions.", {"project": PROJECT_REF, "status": {"type": "string"}, "query": {"type": "string"}}),
     tool("get_issue_context", "Get the complete issue context required for agent work.", {"issue": ISSUE_REF}, ["issue"]),
     tool("get_available_transitions", "Get policy-aware transitions for the current issue revision.", {"issue": ISSUE_REF}, ["issue"]),
-    tool("create_issue", "Create an issue using stable actor and project references.", {"project": PROJECT_REF, "title": {"type": "string", "minLength": 1}, "type": {"type": "string", "enum": list(ISSUE_TYPES)}, "description": {"type": "string", "default": ""}, "priority": {"type": "string", "enum": list(PRIORITIES)}, "milestone": {"oneOf": [{"type": "string"}, {"type": "integer"}]}, "assignee": {"oneOf": [{"type": "string"}, {"type": "integer"}]}, "reviewer": {"oneOf": [{"type": "string"}, {"type": "integer"}]}}, ["project", "title"]),
-    tool("update_issue", "Update issue fields if expected_revision is current.", {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}, "title": {"type": "string", "minLength": 1}, "description": {"type": "string"}, "priority": {"type": "string", "enum": list(PRIORITIES)}, "milestone": {"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}, "assignee": {"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}, "reviewer": {"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}, "position": {"type": "number"}}, ["issue", "expected_revision"]),
+    tool("create_issue", "Create an issue using stable actor and project references.", {"project": PROJECT_REF, "title": {"type": "string", "minLength": 1}, "type": {"type": "string", "enum": list(ISSUE_TYPES)}, "description": {"type": "string", "default": ""}, "priority": {"type": "string", "enum": list(PRIORITIES)}, "milestone": {"oneOf": [{"type": "string"}, {"type": "integer"}]}, "release_id": {"type": "integer"}, "assignee": {"oneOf": [{"type": "string"}, {"type": "integer"}]}, "reviewer": {"oneOf": [{"type": "string"}, {"type": "integer"}]}}, ["project", "title"]),
+    tool("update_issue", "Update issue fields if expected_revision is current.", {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}, "title": {"type": "string", "minLength": 1}, "description": {"type": "string"}, "priority": {"type": "string", "enum": list(PRIORITIES)}, "milestone": {"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}, "release_id": {"oneOf": [{"type": "integer"}, {"type": "null"}]}, "assignee": {"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}, "reviewer": {"oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}]}, "position": {"type": "number"}}, ["issue", "expected_revision"]),
     tool("transition_issue", "Move an issue through an allowed workflow transition.", {"issue": ISSUE_REF, "status": {"type": "string"}, "expected_revision": {"type": "integer", "minimum": 1}}, ["issue", "status", "expected_revision"]),
     tool("claim_issue", "Atomically claim an issue for the authenticated actor.", {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}, "lease_seconds": {"type": "integer", "minimum": 60, "maximum": 86400, "default": 1800}}, ["issue", "expected_revision"]),
     tool("release_issue", "Release an issue claimed by the authenticated actor.", {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}}, ["issue", "expected_revision"]),
@@ -53,9 +57,9 @@ TOOLS = [
     tool("add_git_link", "Associate a branch, commit, PR, or MR.", {"issue": ISSUE_REF, "link_kind": {"type": "string", "enum": ["branch", "commit", "pr", "mr"], "default": "branch"}, "ref": {"type": "string"}, "url": {"type": "string"}}, ["issue", "ref"]),
     tool("delete_git_link", "Delete a Git link.", {"link_id": {"type": "integer"}}, ["link_id"]),
     tool("list_activity", "Read activity entries.", {"entity_type": {"type": "string"}, "entity_id": {"type": "integer"}, "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}),
-    tool("update_activity", "Correct an editable activity entry.", {"activity_id": {"type": "integer"}, "action": {"type": "string"}, "data": {"type": "object"}}, ["activity_id"]),
-    tool("delete_activity", "Delete an editable activity entry.", {"activity_id": {"type": "integer"}}, ["activity_id"]),
 ]
+
+READ_TOOLS = {"whoami", "list_actors", "list_projects", "get_project_context", "list_workflows", "list_labels", "list_milestones", "list_releases", "list_issues", "get_issue_context", "get_available_transitions", "list_activity"}
 
 
 def schemas() -> list[dict[str, Any]]:
@@ -77,11 +81,17 @@ def _label_id(board: Board, issue_id: int, value: int | str) -> int:
 
 def call_tool(board: Board, actor: int, name: str, args: dict[str, Any]) -> Any:
     args = dict(args)
+    identity = board.get_actor(actor)
+    if name not in READ_TOOLS and identity["role"] == "viewer":
+        raise AuthorizationError("viewer role is read-only")
+    if name == "set_actor_role": return board.set_actor_role(actor, args["actor"], args["role"])
     if name == "whoami": return board.get_actor(actor)
     if name == "list_actors": return board.list_actors()
     if name == "list_projects": return board.list_projects()
     if name == "get_project_context": return board.project_context(args["project"])
-    if name in {"list_workflows", "list_labels", "list_milestones"}: return board.project_context(args["project"])[name.removeprefix("list_")]
+    if name in {"list_workflows", "list_labels", "list_milestones", "list_releases"}: return board.project_context(args["project"])[name.removeprefix("list_")]
+    if name == "create_release": args["project_id"] = board.resolve_project(args.pop("project")); return board.create_release(actor, **args)
+    if name == "transition_release": return board.transition_release(actor, **args)
     if name == "create_project": return board.create_project(actor, **args)
     if name == "list_issues":
         if "project" in args: args["project_id"] = board.resolve_project(args.pop("project"))
@@ -121,8 +131,6 @@ def call_tool(board: Board, actor: int, name: str, args: dict[str, Any]) -> Any:
     if name in {"add_label", "remove_label"}:
         issue_id = board.resolve_issue(args["issue"]); label_id = _label_id(board, issue_id, args["label"]); return getattr(board, name)(actor, issue_id, label_id)
     if name == "list_activity": return board.activity(**args)
-    if name == "update_activity": return board.update_activity(**args)
-    if name == "delete_activity": return board.delete_activity(**args)
     raise KeyError(f"unknown tool: {name}")
 
 
@@ -145,9 +153,9 @@ def handle(board: Board, actor: int, request: dict[str, Any]) -> dict[str, Any] 
         try:
             value = call_tool(board, actor, params["name"], params.get("arguments", {}))
             result = {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, default=str)}], "structuredContent": value}
-        except (ConflictError, ValueError, KeyError, TypeError) as exc:
+        except (AuthorizationError, ConflictError, ValueError, KeyError, TypeError) as exc:
             message = str(exc).strip("'")
-            code = "conflict" if isinstance(exc, ConflictError) else "not_found" if isinstance(exc, KeyError) else "blocked" if "blocked" in message or "claimed or assigned" in message else "invalid_request"
+            code = "forbidden" if isinstance(exc, AuthorizationError) else "conflict" if isinstance(exc, ConflictError) else "not_found" if isinstance(exc, KeyError) else "blocked" if "blocked" in message or "claimed or assigned" in message else "invalid_request"
             error = {"code": code, "message": message, "retryable": isinstance(exc, ConflictError)}
             result = {"content": [{"type": "text", "text": json.dumps(error)}], "structuredContent": {"error": error}, "isError": True}
     else:

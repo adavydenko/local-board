@@ -14,6 +14,7 @@ SCHEMA = """
 PRAGMA foreign_keys=ON;
 CREATE TABLE IF NOT EXISTS actors (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, kind TEXT NOT NULL CHECK(kind IN ('agent','human')),
+  role TEXT NOT NULL DEFAULT 'member' CHECK(role IN ('admin','member','viewer')),
   token_hash TEXT UNIQUE, created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS projects (
@@ -31,9 +32,18 @@ CREATE TABLE IF NOT EXISTS workflows (
   issue_type TEXT NOT NULL, states_json TEXT NOT NULL, transitions_json TEXT NOT NULL,
   UNIQUE(project_id,issue_type)
 );
+CREATE TABLE IF NOT EXISTS releases (
+  id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  name TEXT NOT NULL, version TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'planned'
+    CHECK(status IN ('planned','active','released','cancelled')),
+  description TEXT NOT NULL DEFAULT '', target_at TEXT, released_at TEXT,
+  revision INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  UNIQUE(project_id,version)
+);
 CREATE TABLE IF NOT EXISTS issues (
   id INTEGER PRIMARY KEY, project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-  milestone_id INTEGER REFERENCES milestones(id) ON DELETE SET NULL, number INTEGER NOT NULL,
+  milestone_id INTEGER REFERENCES milestones(id) ON DELETE SET NULL,
+  release_id INTEGER REFERENCES releases(id) ON DELETE SET NULL, number INTEGER NOT NULL,
   type TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', status TEXT NOT NULL,
   priority TEXT NOT NULL DEFAULT 'medium', assignee_id INTEGER REFERENCES actors(id) ON DELETE SET NULL,
   reviewer_id INTEGER REFERENCES actors(id) ON DELETE SET NULL, position REAL NOT NULL DEFAULT 0,
@@ -65,6 +75,10 @@ CREATE TABLE IF NOT EXISTS state_counters (
 );
 CREATE INDEX IF NOT EXISTS idx_issues_project_status ON issues(project_id,status,position);
 CREATE INDEX IF NOT EXISTS idx_activity_entity ON activity(entity_type,entity_id,id DESC);
+CREATE TRIGGER IF NOT EXISTS activity_no_update BEFORE UPDATE ON activity
+BEGIN SELECT RAISE(ABORT, 'activity is append-only'); END;
+CREATE TRIGGER IF NOT EXISTS activity_no_delete BEFORE DELETE ON activity
+BEGIN SELECT RAISE(ABORT, 'activity is append-only'); END;
 """
 
 MIGRATION_2 = """
@@ -98,6 +112,10 @@ DEFAULT_STATES = ["backlog", "todo", "in_progress", "in_review", "done", "cancel
 
 class ConflictError(ValueError):
     """A write was based on stale state or lost an atomic claim race."""
+
+
+class AuthorizationError(PermissionError):
+    """The authenticated actor does not have permission for an operation."""
 
 
 def now() -> str:
@@ -146,28 +164,50 @@ class Board:
     def _hash(token: str) -> str:
         return hashlib.sha256(token.encode()).hexdigest()
 
-    def create_actor(self, name: str, kind: str = "agent") -> dict[str, Any]:
+    def create_actor(self, name: str, kind: str = "agent", role: str | None = None) -> dict[str, Any]:
         if kind not in ("agent", "human"):
             raise ValueError("kind must be agent or human")
+        if role not in (None, "admin", "member", "viewer"):
+            raise ValueError("role must be admin, member, or viewer")
         token = secrets.token_urlsafe(32)
         with self.connect() as db:
-            cur = db.execute("INSERT INTO actors(name,kind,token_hash,created_at) VALUES(?,?,?,?)", (name, kind, self._hash(token), now()))
-            return {"id": cur.lastrowid, "name": name, "kind": kind, "token": token}
+            role = role or ("admin" if not db.execute("SELECT 1 FROM actors LIMIT 1").fetchone() else "member")
+            cur = db.execute("INSERT INTO actors(name,kind,role,token_hash,created_at) VALUES(?,?,?,?,?)", (name, kind, role, self._hash(token), now()))
+            return {"id": cur.lastrowid, "name": name, "kind": kind, "role": role, "token": token}
 
     def authenticate(self, token: str) -> dict[str, Any] | None:
         with self.connect() as db:
-            row = db.execute("SELECT id,name,kind FROM actors WHERE token_hash=?", (self._hash(token),)).fetchone()
+            row = db.execute("SELECT id,name,kind,role FROM actors WHERE token_hash=?", (self._hash(token),)).fetchone()
             return dict(row) if row else None
 
     def get_actor(self, actor: int | str) -> dict[str, Any]:
         with self.connect() as db:
-            row = db.execute("SELECT id,name,kind,created_at FROM actors WHERE id=?" if isinstance(actor, int) else "SELECT id,name,kind,created_at FROM actors WHERE name=?", (actor,)).fetchone()
+            row = db.execute("SELECT id,name,kind,role,created_at FROM actors WHERE id=?" if isinstance(actor, int) else "SELECT id,name,kind,role,created_at FROM actors WHERE name=?", (actor,)).fetchone()
             if not row: raise KeyError("actor not found")
             return dict(row)
 
     def list_actors(self) -> list[dict[str, Any]]:
         with self.connect() as db:
-            return [dict(row) for row in db.execute("SELECT id,name,kind,created_at FROM actors ORDER BY name")]
+            return [dict(row) for row in db.execute("SELECT id,name,kind,role,created_at FROM actors ORDER BY name")]
+
+    def require_role(self, actor: int, *roles: str) -> dict[str, Any]:
+        value = self.get_actor(actor)
+        if value["role"] not in roles:
+            raise AuthorizationError(f"{value['role']} role cannot perform this operation")
+        return value
+
+    def set_actor_role(self, actor: int, target: int | str, role: str) -> dict[str, Any]:
+        self.require_role(actor, "admin")
+        if role not in ("admin", "member", "viewer"):
+            raise ValueError("role must be admin, member, or viewer")
+        target_id = self.get_actor(target)["id"]
+        with self.connect() as db:
+            if role != "admin" and db.execute("SELECT role FROM actors WHERE id=?", (target_id,)).fetchone()[0] == "admin":
+                if db.execute("SELECT count(*) FROM actors WHERE role='admin'").fetchone()[0] == 1:
+                    raise ValueError("cannot remove the last admin")
+            db.execute("UPDATE actors SET role=? WHERE id=?", (role, target_id))
+            self._activity(db, actor, "actor", target_id, "role_changed", {"role": role})
+        return self.get_actor(target_id)
 
     def resolve_project(self, project: int | str, db: sqlite3.Connection | None = None) -> int:
         if db is None:
@@ -245,6 +285,7 @@ class Board:
             for workflow in result["workflows"]: workflow.pop("states_json"); workflow.pop("transitions_json")
             result["labels"] = [dict(row) for row in db.execute("SELECT * FROM labels WHERE project_id=? ORDER BY name", (project_id,))]
             result["milestones"] = [dict(row) for row in db.execute("SELECT * FROM milestones WHERE project_id=? ORDER BY id", (project_id,))]
+            result["releases"] = [dict(row) for row in db.execute("SELECT * FROM releases WHERE project_id=? ORDER BY id DESC", (project_id,))]
             configured = db.execute("SELECT defaults_json,agent_policy_json,digest FROM project_config WHERE project_id=?", (project_id,)).fetchone()
             result["defaults"] = json.loads(configured["defaults_json"]) if configured else {}
             result["agent_policy"] = json.loads(configured["agent_policy_json"]) if configured else {}
@@ -268,9 +309,38 @@ class Board:
             self._activity(db, actor, "project", project_id, "workflow_changed", {"issue_type": issue_type})
         return {"project_id": project_id, "issue_type": issue_type, "states": states, "transitions": transitions}
 
-    def create_issue(self, actor: int, project_id: int, title: str, issue_type: str | None = None, description: str = "", priority: str | None = None, milestone_id: int | None = None, assignee_id: int | None = None, reviewer_id: int | None = None) -> dict[str, Any]:
+    def create_release(self, actor: int, project_id: int, name: str, version: str, description: str = "", target_at: str | None = None) -> dict[str, Any]:
+        stamp = now()
+        with self.connect() as db:
+            cur = db.execute(
+                "INSERT INTO releases(project_id,name,version,description,target_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
+                (project_id, name, version, description, target_at, stamp, stamp),
+            )
+            self._activity(db, actor, "release", cur.lastrowid, "created", {"version": version})
+            return dict(db.execute("SELECT * FROM releases WHERE id=?", (cur.lastrowid,)).fetchone())
+
+    def list_releases(self, project: int | str) -> list[dict[str, Any]]:
+        with self.connect() as db:
+            project_id = self.resolve_project(project, db)
+            return [dict(row) for row in db.execute("SELECT * FROM releases WHERE project_id=? ORDER BY id DESC", (project_id,))]
+
+    def transition_release(self, actor: int, release_id: int, status: str, expected_revision: int) -> dict[str, Any]:
+        allowed = {"planned": {"active", "cancelled"}, "active": {"released", "cancelled"}, "released": set(), "cancelled": set()}
+        with self.connect() as db:
+            release = db.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone()
+            if not release: raise KeyError("release not found")
+            if release["revision"] != expected_revision: raise ConflictError("stale release revision")
+            if status not in allowed[release["status"]]: raise ValueError(f"invalid release transition {release['status']} -> {status}")
+            stamp = now(); released_at = stamp if status == "released" else None
+            db.execute("UPDATE releases SET status=?,released_at=?,revision=revision+1,updated_at=? WHERE id=?", (status, released_at, stamp, release_id))
+            self._activity(db, actor, "release", release_id, "transitioned", {"from": release["status"], "to": status})
+            return dict(db.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone())
+
+    def create_issue(self, actor: int, project_id: int, title: str, issue_type: str | None = None, description: str = "", priority: str | None = None, milestone_id: int | None = None, release_id: int | None = None, assignee_id: int | None = None, reviewer_id: int | None = None) -> dict[str, Any]:
         with self.connect() as db:
             self._assert_milestone_project(db, milestone_id, project_id)
+            if release_id is not None and not db.execute("SELECT 1 FROM releases WHERE id=? AND project_id=?", (release_id, project_id)).fetchone():
+                raise ValueError("release belongs to another project or does not exist")
             configured = db.execute("SELECT defaults_json FROM project_config WHERE project_id=?", (project_id,)).fetchone()
             defaults = json.loads(configured[0]) if configured else {}
             issue_type = issue_type or defaults.get("issue_type", "task")
@@ -287,7 +357,7 @@ class Board:
             number = allocated[0]
             position = self._next_position(db, project_id, status)
             stamp = now()
-            cur = db.execute("INSERT INTO issues(project_id,milestone_id,number,type,title,description,status,priority,assignee_id,reviewer_id,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (project_id, milestone_id, number, issue_type, title, description, status, priority, assignee_id, reviewer_id, position, actor, stamp, stamp))
+            cur = db.execute("INSERT INTO issues(project_id,milestone_id,release_id,number,type,title,description,status,priority,assignee_id,reviewer_id,position,created_by,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", (project_id, milestone_id, release_id, number, issue_type, title, description, status, priority, assignee_id, reviewer_id, position, actor, stamp, stamp))
             self._activity(db, actor, "issue", cur.lastrowid, "created")
             return self.get_issue(cur.lastrowid, db)
 
@@ -338,7 +408,7 @@ class Board:
 
     def update_issue(self, actor: int, issue_id: int, **fields: Any) -> dict[str, Any]:
         expected_revision = fields.pop("expected_revision", None)
-        allowed = {"title", "description", "priority", "milestone_id", "assignee_id", "reviewer_id", "position"}
+        allowed = {"title", "description", "priority", "milestone_id", "release_id", "assignee_id", "reviewer_id", "position"}
         changes = {k: v for k, v in fields.items() if k in allowed}
         if not changes:
             return self.get_issue(issue_id)
@@ -351,6 +421,8 @@ class Board:
             current = self.get_issue(issue_id, db)
             if "milestone_id" in changes:
                 self._assert_milestone_project(db, changes["milestone_id"], current["project_id"])
+            if "release_id" in changes and changes["release_id"] is not None and not db.execute("SELECT 1 FROM releases WHERE id=? AND project_id=?", (changes["release_id"], current["project_id"])).fetchone():
+                raise ValueError("release belongs to another project or does not exist")
             expected_revision = current["revision"] if expected_revision is None else expected_revision
             changes["updated_at"] = now()
             changes["revision"] = current["revision"] + 1
@@ -521,22 +593,12 @@ class Board:
                 item = dict(r); item["data"] = json.loads(item.pop("data_json")); rows.append(item)
             return rows
 
-    def update_activity(self, activity_id: int, action: str | None = None, data: dict[str, Any] | None = None) -> dict[str, Any]:
-        changes: list[str] = []; args: list[Any] = []
-        if action is not None: changes.append("action=?"); args.append(action)
-        if data is not None: changes.append("data_json=?"); args.append(json.dumps(data))
-        if not changes: raise ValueError("action or data is required")
-        with self.connect() as db:
-            args.append(activity_id); cur = db.execute(f"UPDATE activity SET {','.join(changes)} WHERE id=?", args)
-            if not cur.rowcount: raise KeyError("activity not found")
-            row = dict(db.execute("SELECT * FROM activity WHERE id=?", (activity_id,)).fetchone()); row["data"] = json.loads(row.pop("data_json")); return row
+    def update_activity(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise AuthorizationError("activity is an immutable append-only audit log")
 
-    def delete_activity(self, activity_id: int) -> dict[str, Any]:
-        with self.connect() as db:
-            cur = db.execute("DELETE FROM activity WHERE id=?", (activity_id,))
-            if not cur.rowcount: raise KeyError("activity not found")
-            return {"deleted": True, "id": activity_id}
+    def delete_activity(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        raise AuthorizationError("activity is an immutable append-only audit log")
 
     def dashboard(self) -> dict[str, Any]:
         with self.connect() as db:
-            return {"projects": [dict(r) for r in db.execute("SELECT * FROM projects ORDER BY id")], "issues": self.list_issues(), "actors": [dict(r) for r in db.execute("SELECT id,name,kind FROM actors ORDER BY name")], "activity": self.activity(limit=30)}
+            return {"projects": [dict(r) for r in db.execute("SELECT * FROM projects ORDER BY id")], "issues": self.list_issues(), "actors": [dict(r) for r in db.execute("SELECT id,name,kind,role FROM actors ORDER BY name")], "activity": self.activity(limit=30)}
