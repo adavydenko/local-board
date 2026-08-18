@@ -27,8 +27,10 @@ class BoardTest(unittest.TestCase):
         self.assertEqual(len(self.board.get_issue(issue["id"])["checklist"]), 1)
         self.assertGreaterEqual(len(self.board.activity("issue", issue["id"])), 4)
         event = self.board.activity("issue", issue["id"])[0]
-        self.assertEqual(self.board.update_activity(event["id"], action="corrected")["action"], "corrected")
-        self.assertTrue(self.board.delete_activity(event["id"])["deleted"])
+        with self.assertRaisesRegex(PermissionError, "immutable"):
+            self.board.update_activity(event["id"], action="corrected")
+        with self.assertRaisesRegex(PermissionError, "immutable"):
+            self.board.delete_activity(event["id"])
 
     def test_rejects_invalid_transition(self):
         project = self.board.create_project(self.actor["id"], "WEB", "Web")
