@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from . import __version__
 from .db import AuthorizationError, Board, ConflictError, ISSUE_TYPES, PRIORITIES
 
 
@@ -154,7 +155,7 @@ def handle(board: Board, actor: int, request: dict[str, Any]) -> dict[str, Any] 
     method = request.get("method")
     if method == "notifications/initialized": return None
     if method == "initialize":
-        result = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "local-board", "version": "0.1.0"}}
+        result = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "local-board", "version": __version__}}
     elif method == "ping": result = {}
     elif method == "tools/list": result = {"tools": schemas(board.get_actor(actor)["role"])}
     elif method == "tools/call":
