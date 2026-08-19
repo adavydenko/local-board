@@ -1,15 +1,17 @@
 import concurrent.futures
 import multiprocessing
+import sqlite3
 import tempfile
 import threading
 import unittest
 from pathlib import Path
 
-from local_board.db import Board, ConflictError
+from local_board.db import Board, ConflictError, DatabaseBusyError
 
 
-def create_issues_in_process(path: str, actor_id: int, project_id: int, count: int):
+def create_issues_in_process(path: str, actor_id: int, project_id: int, count: int, barrier):
     board = Board(path)
+    barrier.wait(timeout=10)
     return [board.create_issue(actor_id, project_id, f"process-{multiprocessing.current_process().pid}-{index}") for index in range(count)]
 
 
@@ -25,28 +27,104 @@ class ConcurrencyTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def test_threads_allocate_unique_numbers_and_positions(self):
-        workers = 16
-        barrier = threading.Barrier(workers)
+        workers, repetitions = 16, 3
+        all_issues = []
+        for repetition in range(repetitions):
+            barrier = threading.Barrier(workers)
 
-        def create(index):
-            barrier.wait(timeout=5)
-            return Board(self.path).create_issue(self.actors[index]["id"], self.project["id"], f"thread-{index}")
+            def create(index):
+                barrier.wait(timeout=5)
+                return Board(self.path).create_issue(
+                    self.actors[index]["id"], self.project["id"], f"thread-{repetition}-{index}"
+                )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-            issues = list(pool.map(create, range(workers)))
-        self.assertEqual(sorted(issue["number"] for issue in issues), list(range(1, workers + 1)))
-        self.assertEqual(len({issue["position"] for issue in issues}), workers)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                all_issues.extend(pool.map(create, range(workers)))
+        expected = list(range(1, workers * repetitions + 1))
+        self.assertEqual(sorted(issue["number"] for issue in all_issues), expected)
+        self.assertEqual(sorted(issue["position"] for issue in all_issues), expected)
+        self.assertEqual(len(Board(self.path).list_issues(self.project["id"])), len(expected))
 
     def test_processes_allocate_unique_numbers(self):
-        workers, per_worker = 4, 8
-        with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as pool:
-            futures = [pool.submit(create_issues_in_process, str(self.path), self.actors[index]["id"], self.project["id"], per_worker) for index in range(workers)]
-            issues = [issue for future in futures for issue in future.result(timeout=20)]
+        workers, per_worker = 8, 4
+        with multiprocessing.Manager() as manager:
+            barrier = manager.Barrier(workers)
+            with concurrent.futures.ProcessPoolExecutor(max_workers=workers) as pool:
+                futures = [pool.submit(create_issues_in_process, str(self.path), self.actors[index]["id"], self.project["id"], per_worker, barrier) for index in range(workers)]
+                issues = [issue for future in futures for issue in future.result(timeout=30)]
         self.assertEqual(len(issues), workers * per_worker)
         self.assertEqual(sorted(issue["number"] for issue in issues), list(range(1, workers * per_worker + 1)))
         with self.board.connect() as db:
             self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
             self.assertEqual(list(db.execute("PRAGMA foreign_key_check")), [])
+
+    def test_parallel_related_writes_and_activity(self):
+        workers = 16
+        issue = self.board.create_issue(self.actors[0]["id"], self.project["id"], "related writes")
+        labels = [
+            self.board.create_label(self.actors[0]["id"], self.project["id"], f"parallel-{index}")
+            for index in range(workers)
+        ]
+
+        def run(action):
+            barrier = threading.Barrier(workers)
+
+            def worker(index):
+                barrier.wait(timeout=5)
+                return action(Board(self.path), index)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                return list(pool.map(worker, range(workers)))
+
+        run(lambda board, index: board.add_related(self.actors[index]["id"], issue["id"], "comment", body=f"comment-{index}"))
+        run(lambda board, index: board.add_related(self.actors[index]["id"], issue["id"], "checklist", text=f"item-{index}", position=index + 1))
+        run(lambda board, index: board.add_label(self.actors[index]["id"], issue["id"], labels[index]["id"]))
+
+        context = self.board.get_issue_context(issue["id"])
+        self.assertEqual(len(context["comments"]), workers)
+        self.assertEqual(len(context["checklist"]), workers)
+        self.assertEqual(len(context["labels"]), workers)
+        actions = [entry["action"] for entry in context["activity"]]
+        self.assertEqual(actions.count("comment_added"), workers)
+        self.assertEqual(actions.count("checklist_added"), workers)
+        self.assertEqual(actions.count("label_added"), workers)
+
+    def test_dashboard_activity_readers_during_writes_preserve_integrity(self):
+        workers = 16
+        barrier = threading.Barrier(workers)
+
+        def work(index):
+            board = Board(self.path)
+            barrier.wait(timeout=5)
+            if index < 8:
+                for sequence in range(10):
+                    board.create_issue(self.actors[index]["id"], self.project["id"], f"stress-{index}-{sequence}")
+            else:
+                for _ in range(15):
+                    board.dashboard()
+                    board.activity(limit=100)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+            list(pool.map(work, range(workers)))
+        with self.board.connect() as db:
+            self.assertEqual(db.execute("PRAGMA integrity_check").fetchone()[0], "ok")
+            self.assertEqual(list(db.execute("PRAGMA foreign_key_check")), [])
+            self.assertEqual(db.execute("SELECT count(*) FROM issues").fetchone()[0], 80)
+
+    def test_lock_retry_exhaustion_has_clear_error(self):
+        locked = sqlite3.connect(self.path, isolation_level=None)
+        locked.execute("BEGIN IMMEDIATE")
+        try:
+            contender = Board(
+                self.path, busy_timeout_ms=5, max_lock_retries=1, retry_base_seconds=0.001
+            )
+            with self.assertRaisesRegex(DatabaseBusyError, "after 2 attempts"):
+                contender.create_issue(
+                    self.actors[0]["id"], self.project["id"], "cannot acquire lock"
+                )
+        finally:
+            locked.rollback()
+            locked.close()
 
     def test_stale_update_is_rejected_without_lost_data(self):
         issue = self.board.create_issue(self.actors[0]["id"], self.project["id"], "original")
