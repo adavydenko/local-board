@@ -2,6 +2,12 @@
 
 Local Board is a lightweight issue tracker installed inside a repository. It gives autonomous agents and humans a shared SQLite-backed board, an MCP interface, and a local web UI without requiring a hosted service.
 
+## Is Local Board a fit?
+
+Local Board is most useful when multiple agents, or humans and agents, work concurrently on the same local repository and need atomic claims, explicit handoffs, workflow rules, and an audit trail. It can replace an ad-hoc `TODO.md` for that local coordination loop while keeping project configuration and agent instructions in Git.
+
+It is probably unnecessary for a single short-lived agent task, and it is not a replacement for a hosted tracker used by a distributed team. Issues, comments, identities, and activity live in the ignored SQLite database: Git clones receive the board configuration and instructions, **not** the operational board. Agents in other worktrees must connect to the one server that owns the common Git repository's database. Agents on other machines need a deliberately operated shared host (with appropriate network security) or a separate board; Local Board does not synchronize databases between machines.
+
 ## Product scope
 
 The first release includes:
@@ -48,6 +54,8 @@ local-board status
 local-board doctor --offline
 ```
 
+An automated coordinator can request machine-readable bootstrap credentials with `local-board actor coordinator --kind agent --json`. After the server starts, an authenticated admin coordinator can provision a separate least-privilege identity for every subagent through the MCP `create_actor` tool and invalidate/reissue credentials with `rotate_actor_token`. Both commands return plaintext tokens once; capture them without logging and pass them through the orchestrator's secret/environment channel, never through issue comments or tracked files.
+
 Save each displayed token securely. Start the UI and HTTP MCP endpoint:
 
 ```bash
@@ -76,7 +84,7 @@ Every agent should receive its own token so activity and authorship remain attri
 
 Available tools cover project and issue discovery, creation and update, workflow transitions, milestones, comments, checklists, labels, dependencies, attachment references, Git links, and activity. Use MCP `tools/list` for the authoritative schemas.
 
-`local-board init` also installs `.local-board/AGENT.md` and a repository-local skill at `.agents/skills/local-board/`. Separate onboarding is available in [the human guide](docs/human-guide.md), [the agent guide](docs/agent-guide.md), and [the operations guide](docs/operations.md).
+`local-board init` also installs `.local-board/AGENT.md`, a repository-local skill at `.agents/skills/local-board/`, and a root `AGENTS.md` discovery bridge when that file does not exist. It never overwrites existing root instructions, including with `--force`; merge [the provided bridge instructions](examples/AGENTS.md.example) manually when the repository already has an `AGENTS.md`. `local-board doctor` warns when that bridge is not discoverable. Separate onboarding is available in [the human guide](docs/human-guide.md), [the agent guide](docs/agent-guide.md), and [the operations guide](docs/operations.md).
 
 ## Human web UI
 

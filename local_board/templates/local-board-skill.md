@@ -19,6 +19,7 @@ Treat Local Board as the source of truth for operational work. Use MCP tools, ne
 ## Execute and coordinate
 
 - Use the stable identifier such as `APP-12` in tool calls and the branch name.
+- Claims are 30-minute leases by default. For longer work, renew by calling `claim_issue` again with the latest revision before expiry; stop if ownership changed.
 - Call `transition_issue` only with a value from `available_transitions`; pass the latest `expected_revision`.
 - Mark checklist items as work completes. Add short comments for decisions, material progress, blockers, and handoffs.
 - Model prerequisites with `add_dependency`. Do not start an issue whose context says `blocked`.
@@ -34,6 +35,8 @@ Treat Local Board as the source of truth for operational work. Use MCP tools, ne
 4. Add a concise outcome or handoff comment.
 5. Transition to review when required and ensure a reviewer is assigned.
 6. Transition to the configured terminal state only when policy permits. Call `release_issue` when abandoning or handing off unfinished work.
+
+`available_transitions` does not by itself prove completion. The agent must still enforce acceptance criteria, checklist completion, reviewer requirements, and the configured branch pattern.
 
 ## Error handling
 
