@@ -14,6 +14,20 @@ Each agent must receive its own token through the process environment or another
 
 The conceptual client configuration in `examples/mcp-http.example.json` illustrates the required URL and header; adapt field names to the MCP client in use.
 
+## Coordinator bootstrap
+
+An agent orchestrator with shell access can initialize the repository and capture its first admin identity without parsing human-oriented output:
+
+```bash
+local-board init
+local-board actor coordinator --kind agent --json
+local-board serve
+```
+
+The JSON response contains the one-time plaintext token. Capture it directly into the orchestrator's secret store; do not echo it, place it in a prompt, add it to an issue, or commit it. Once connected as admin, call `create_actor` for each subagent with the minimum role (`member` for implementation, `viewer` for audit). Deliver each returned token through the execution environment or the orchestrator's secret channel. Call `rotate_actor_token` when a token may have leaked or when reassigning an identity; the previous token stops authenticating immediately.
+
+Subagents do not need the administrative tool surface. Their normal loop is `whoami`, project/issue discovery, `get_issue_context`, `claim_issue`, execution updates, and transitions. Local Board filters `tools/list` by the authenticated role: members do not see credential administration, and viewers see only read tools. Authorization is still enforced server-side for every call.
+
 ## Work lifecycle
 
 1. Call `whoami`, `list_projects`, and `get_project_context`.

@@ -21,6 +21,8 @@ def tool(name: str, description: str, properties: dict[str, Any] | None = None, 
 TOOLS = [
     tool("whoami", "Return the authenticated actor identity."),
     tool("list_actors", "List human and agent identities available for assignment."),
+    tool("create_actor", "Provision an actor and return its bearer token once. Admin only; transfer the token through a secure out-of-band channel.", {"name": {"type": "string", "minLength": 1}, "kind": {"type": "string", "enum": ["agent", "human"], "default": "agent"}, "role": {"type": "string", "enum": ["member", "viewer"], "default": "member"}}, ["name"]),
+    tool("rotate_actor_token", "Invalidate an actor token and return its replacement once. Admin only.", {"actor": {"oneOf": [{"type": "string"}, {"type": "integer"}]}}, ["actor"]),
     tool("set_actor_role", "Change an actor role. Admin only.", {"actor": {"oneOf": [{"type": "string"}, {"type": "integer"}]}, "role": {"type": "string", "enum": ["admin", "member", "viewer"]}}, ["actor", "role"]),
     tool("list_projects", "List projects."),
     tool("get_project_context", "Get project metadata, workflows, labels, milestones, defaults, and agent policy.", {"project": PROJECT_REF}, ["project"]),
@@ -60,9 +62,14 @@ TOOLS = [
 ]
 
 READ_TOOLS = {"whoami", "list_actors", "list_projects", "get_project_context", "list_workflows", "list_labels", "list_milestones", "list_releases", "list_issues", "get_issue_context", "get_available_transitions", "list_activity"}
+ADMIN_TOOLS = {"create_actor", "rotate_actor_token", "set_actor_role"}
 
 
-def schemas() -> list[dict[str, Any]]:
+def schemas(role: str | None = None) -> list[dict[str, Any]]:
+    if role == "viewer":
+        return [item for item in TOOLS if item["name"] in READ_TOOLS]
+    if role == "member":
+        return [item for item in TOOLS if item["name"] not in ADMIN_TOOLS]
     return TOOLS
 
 
@@ -84,6 +91,8 @@ def call_tool(board: Board, actor: int, name: str, args: dict[str, Any]) -> Any:
     identity = board.get_actor(actor)
     if name not in READ_TOOLS and identity["role"] == "viewer":
         raise AuthorizationError("viewer role is read-only")
+    if name == "create_actor": return board.provision_actor(actor, **args)
+    if name == "rotate_actor_token": return board.rotate_actor_token(actor, args["actor"])
     if name == "set_actor_role": return board.set_actor_role(actor, args["actor"], args["role"])
     if name == "whoami": return board.get_actor(actor)
     if name == "list_actors": return board.list_actors()
@@ -147,7 +156,7 @@ def handle(board: Board, actor: int, request: dict[str, Any]) -> dict[str, Any] 
     if method == "initialize":
         result = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "local-board", "version": "0.1.0"}}
     elif method == "ping": result = {}
-    elif method == "tools/list": result = {"tools": schemas()}
+    elif method == "tools/list": result = {"tools": schemas(board.get_actor(actor)["role"])}
     elif method == "tools/call":
         params = request.get("params", {})
         try:

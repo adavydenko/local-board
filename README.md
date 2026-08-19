@@ -54,6 +54,8 @@ local-board status
 local-board doctor --offline
 ```
 
+An automated coordinator can request machine-readable bootstrap credentials with `local-board actor coordinator --kind agent --json`. After the server starts, an authenticated admin coordinator can provision a separate least-privilege identity for every subagent through the MCP `create_actor` tool and invalidate/reissue credentials with `rotate_actor_token`. Both commands return plaintext tokens once; capture them without logging and pass them through the orchestrator's secret/environment channel, never through issue comments or tracked files.
+
 Save each displayed token securely. Start the UI and HTTP MCP endpoint:
 
 ```bash

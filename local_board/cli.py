@@ -22,7 +22,7 @@ def main() -> None:
     parser.add_argument("--config", help="project config path (defaults to .local-board/project.toml)")
     sub = parser.add_subparsers(dest="command", required=True)
     initialize = sub.add_parser("init"); initialize.add_argument("--force", action="store_true")
-    actor = sub.add_parser("actor"); actor.add_argument("name"); actor.add_argument("--kind", choices=("agent", "human"), default="agent"); actor.add_argument("--role", choices=("admin", "member", "viewer"))
+    actor = sub.add_parser("actor"); actor.add_argument("name"); actor.add_argument("--kind", choices=("agent", "human"), default="agent"); actor.add_argument("--role", choices=("admin", "member", "viewer")); actor.add_argument("--json", action="store_true")
     web = sub.add_parser("serve"); web.add_argument("--host", default="127.0.0.1"); web.add_argument("--port", type=int, default=8765)
     sync = sub.add_parser("sync-branch"); sync.add_argument("--token", default=os.environ.get("LOCAL_BOARD_TOKEN"))
     status = sub.add_parser("status"); status.add_argument("--json", action="store_true")
@@ -53,7 +53,9 @@ def main() -> None:
         result = ConfigService(board).apply(load_config(config_path))
         print(f"Initialized {board.path}; applied {len(result['actions'])} configuration action(s)")
     elif args.command == "actor":
-        value = board.create_actor(args.name, args.kind, args.role); print(f"Actor: {value['name']} ({value['kind']}, {value['role']})\nToken (shown once): {value['token']}")
+        value = board.create_actor(args.name, args.kind, args.role)
+        if args.json: print(json.dumps(value))
+        else: print(f"Actor: {value['name']} ({value['kind']}, {value['role']})\nToken (shown once): {value['token']}")
     elif args.command == "serve": serve(board, args.host, args.port)
     elif args.command == "status":
         try:
