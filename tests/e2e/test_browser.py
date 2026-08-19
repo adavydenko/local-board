@@ -36,7 +36,11 @@ class BrowserE2ETest(unittest.TestCase):
                     page.goto(f"http://127.0.0.1:{server.server_port}/")
                     page.locator("#tokenInput").fill(actor["token"])
                     page.locator("#loginForm button").click()
-                    page.locator("#login.hidden").wait_for()
+                    # ``#login.hidden`` deliberately resolves to a hidden node;
+                    # Playwright's default wait state is "visible" and would
+                    # therefore wait until timeout after a successful login.
+                    page.locator("#login").wait_for(state="hidden")
+                    page.locator("#board .column").first.wait_for(state="visible")
                     self.assertGreater(page.locator("#board .column").count(), 0)
                     page.locator("#newIssueBtn").click()
                     page.locator("#issueTitle").fill("Created in Chromium")
