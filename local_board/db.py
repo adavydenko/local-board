@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import random
 import secrets
 import sqlite3
+import time
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 
 SCHEMA = """
@@ -114,6 +116,10 @@ class ConflictError(ValueError):
     """A write was based on stale state or lost an atomic claim race."""
 
 
+class DatabaseBusyError(RuntimeError):
+    """SQLite remained locked after the configured bounded retry window."""
+
+
 class AuthorizationError(PermissionError):
     """The authenticated actor does not have permission for an operation."""
 
@@ -123,17 +129,49 @@ def now() -> str:
 
 
 class Board:
-    def __init__(self, path: str | Path = ".local-board/board.db"):
+    def __init__(
+        self,
+        path: str | Path = ".local-board/board.db",
+        *,
+        busy_timeout_ms: int = 1000,
+        max_lock_retries: int = 6,
+        retry_base_seconds: float = 0.01,
+    ):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.busy_timeout_ms = busy_timeout_ms
+        self.max_lock_retries = max_lock_retries
+        self.retry_base_seconds = retry_base_seconds
+
+    def _open_connection(self) -> sqlite3.Connection:
+        db = sqlite3.connect(self.path, timeout=self.busy_timeout_ms / 1000)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA foreign_keys=ON")
+        db.execute(f"PRAGMA busy_timeout={int(self.busy_timeout_ms)}")
+        return db
+
+    @staticmethod
+    def _is_lock_error(error: sqlite3.OperationalError) -> bool:
+        return "locked" in str(error).lower() or "busy" in str(error).lower()
+
+    def _retry_lock(self, operation: Callable[[], Any]) -> Any:
+        for attempt in range(self.max_lock_retries + 1):
+            try:
+                return operation()
+            except sqlite3.OperationalError as error:
+                if not self._is_lock_error(error):
+                    raise
+                if attempt == self.max_lock_retries:
+                    raise DatabaseBusyError(
+                        f"database remained locked after {attempt + 1} attempts "
+                        f"(busy_timeout={self.busy_timeout_ms}ms)"
+                    ) from error
+                delay = self.retry_base_seconds * (2**attempt)
+                time.sleep(delay + random.random() * delay)
 
     @contextmanager
     def connect(self) -> Iterator[sqlite3.Connection]:
-        db = sqlite3.connect(self.path, timeout=10)
-        db.row_factory = sqlite3.Row
-        db.execute("PRAGMA foreign_keys=ON")
-        db.execute("PRAGMA journal_mode=WAL")
-        db.execute("PRAGMA busy_timeout=10000")
+        db = self._open_connection()
         try:
             yield db
             db.commit()
@@ -143,8 +181,23 @@ class Board:
         finally:
             db.close()
 
+    @contextmanager
+    def transaction(self) -> Iterator[sqlite3.Connection]:
+        """Run a write transaction after bounded retries to acquire its lock."""
+        db = self._open_connection()
+        try:
+            self._retry_lock(lambda: db.execute("BEGIN IMMEDIATE"))
+            yield db
+            self._retry_lock(db.commit)
+        except Exception:
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
     def init(self) -> None:
         with self.connect() as db:
+            db.execute("PRAGMA journal_mode=WAL")
             version = db.execute("PRAGMA user_version").fetchone()[0]
             if version > SCHEMA_VERSION:
                 raise RuntimeError(
@@ -170,7 +223,7 @@ class Board:
         if role not in (None, "admin", "member", "viewer"):
             raise ValueError("role must be admin, member, or viewer")
         token = secrets.token_urlsafe(32)
-        with self.connect() as db:
+        with self.transaction() as db:
             role = role or ("admin" if not db.execute("SELECT 1 FROM actors LIMIT 1").fetchone() else "member")
             cur = db.execute("INSERT INTO actors(name,kind,role,token_hash,created_at) VALUES(?,?,?,?,?)", (name, kind, role, self._hash(token), now()))
             return {"id": cur.lastrowid, "name": name, "kind": kind, "role": role, "token": token}
@@ -179,7 +232,7 @@ class Board:
         """Create an identity through an authenticated administrator."""
         self.require_role(actor, "admin")
         value = self.create_actor(name, kind, role)
-        with self.connect() as db:
+        with self.transaction() as db:
             self._activity(db, actor, "actor", value["id"], "created", {"kind": kind, "role": role})
         return value
 
@@ -188,7 +241,7 @@ class Board:
         self.require_role(actor, "admin")
         target_id = self.get_actor(target)["id"]
         token = secrets.token_urlsafe(32)
-        with self.connect() as db:
+        with self.transaction() as db:
             db.execute("UPDATE actors SET token_hash=? WHERE id=?", (self._hash(token), target_id))
             self._activity(db, actor, "actor", target_id, "token_rotated")
         return {**self.get_actor(target_id), "token": token}
@@ -219,7 +272,7 @@ class Board:
         if role not in ("admin", "member", "viewer"):
             raise ValueError("role must be admin, member, or viewer")
         target_id = self.get_actor(target)["id"]
-        with self.connect() as db:
+        with self.transaction() as db:
             if role != "admin" and db.execute("SELECT role FROM actors WHERE id=?", (target_id,)).fetchone()[0] == "admin":
                 if db.execute("SELECT count(*) FROM actors WHERE role='admin'").fetchone()[0] == 1:
                     raise ValueError("cannot remove the last admin")
@@ -273,7 +326,7 @@ class Board:
         if not key.isalnum() or not (2 <= len(key) <= 10):
             raise ValueError("project key must be 2-10 alphanumeric characters")
         stamp = now()
-        with self.connect() as db:
+        with self.transaction() as db:
             cur = db.execute("INSERT INTO projects(key,name,description,created_at,updated_at) VALUES(?,?,?,?,?)", (key, name, description, stamp, stamp))
             pid = cur.lastrowid
             transitions = [[DEFAULT_STATES[i], DEFAULT_STATES[i + 1]] for i in range(len(DEFAULT_STATES) - 2)] + [[s, "cancelled"] for s in DEFAULT_STATES[:-1]]
@@ -311,7 +364,7 @@ class Board:
             return result
 
     def create_milestone(self, actor: int, project_id: int, name: str, description: str = "", due_at: str | None = None, key: str | None = None) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             cur = db.execute("INSERT INTO milestones(project_id,key,name,description,due_at,created_at) VALUES(?,?,?,?,?,?)", (project_id, key, name, description, due_at, now()))
             self._activity(db, actor, "milestone", cur.lastrowid, "created")
             return dict(db.execute("SELECT * FROM milestones WHERE id=?", (cur.lastrowid,)).fetchone())
@@ -319,7 +372,7 @@ class Board:
     def set_workflow(self, actor: int, project_id: int, issue_type: str, states: list[str], transitions: list[list[str]]) -> dict[str, Any]:
         if issue_type not in ISSUE_TYPES or not states or any(a not in states or b not in states for a, b in transitions):
             raise ValueError("invalid workflow")
-        with self.connect() as db:
+        with self.transaction() as db:
             current = db.execute("SELECT managed_by FROM workflows WHERE project_id=? AND issue_type=?", (project_id, issue_type)).fetchone()
             if current and current["managed_by"] == "config":
                 raise ValueError("workflow is managed by .local-board/project.toml")
@@ -329,7 +382,7 @@ class Board:
 
     def create_release(self, actor: int, project_id: int, name: str, version: str, description: str = "", target_at: str | None = None) -> dict[str, Any]:
         stamp = now()
-        with self.connect() as db:
+        with self.transaction() as db:
             cur = db.execute(
                 "INSERT INTO releases(project_id,name,version,description,target_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?)",
                 (project_id, name, version, description, target_at, stamp, stamp),
@@ -344,7 +397,7 @@ class Board:
 
     def transition_release(self, actor: int, release_id: int, status: str, expected_revision: int) -> dict[str, Any]:
         allowed = {"planned": {"active", "cancelled"}, "active": {"released", "cancelled"}, "released": set(), "cancelled": set()}
-        with self.connect() as db:
+        with self.transaction() as db:
             release = db.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone()
             if not release: raise KeyError("release not found")
             if release["revision"] != expected_revision: raise ConflictError("stale release revision")
@@ -355,7 +408,7 @@ class Board:
             return dict(db.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone())
 
     def create_issue(self, actor: int, project_id: int, title: str, issue_type: str | None = None, description: str = "", priority: str | None = None, milestone_id: int | None = None, release_id: int | None = None, assignee_id: int | None = None, reviewer_id: int | None = None) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             self._assert_milestone_project(db, milestone_id, project_id)
             if release_id is not None and not db.execute("SELECT 1 FROM releases WHERE id=? AND project_id=?", (release_id, project_id)).fetchone():
                 raise ValueError("release belongs to another project or does not exist")
@@ -435,7 +488,7 @@ class Board:
         if "assignee_id" in changes:
             changes["claimed_at"] = None
             changes["claim_expires_at"] = None
-        with self.connect() as db:
+        with self.transaction() as db:
             current = self.get_issue(issue_id, db)
             if "milestone_id" in changes:
                 self._assert_milestone_project(db, changes["milestone_id"], current["project_id"])
@@ -451,8 +504,10 @@ class Board:
             return self.get_issue(issue_id, db)
 
     def transition_issue(self, actor: int, issue_id: int, status: str, expected_revision: int | None = None) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             issue = self.get_issue(issue_id, db)
+            if expected_revision is not None and issue["revision"] != expected_revision:
+                raise ConflictError(f"issue transition conflict: expected revision {expected_revision}")
             wf = db.execute("SELECT states_json,transitions_json FROM workflows WHERE project_id=? AND issue_type=?", (issue["project_id"], issue["type"])).fetchone()
             states, transitions = json.loads(wf[0]), json.loads(wf[1])
             if status not in states or [issue["status"], status] not in transitions:
@@ -476,7 +531,7 @@ class Board:
             raise ValueError("lease_seconds must be between 60 and 86400")
         stamp = datetime.now(UTC)
         expires = stamp + timedelta(seconds=lease_seconds)
-        with self.connect() as db:
+        with self.transaction() as db:
             cur = db.execute(
                 "UPDATE issues SET assignee_id=?,claimed_at=?,claim_expires_at=?,revision=revision+1,updated_at=? "
                 "WHERE id=? AND revision=? AND (assignee_id IS NULL OR assignee_id=? OR (claim_expires_at IS NOT NULL AND claim_expires_at<=?))",
@@ -488,7 +543,7 @@ class Board:
             return self.get_issue(issue_id, db)
 
     def release_issue(self, actor: int, issue_id: int, expected_revision: int) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             cur = db.execute(
                 "UPDATE issues SET assignee_id=NULL,claimed_at=NULL,claim_expires_at=NULL,revision=revision+1,updated_at=? "
                 "WHERE id=? AND revision=? AND assignee_id=?",
@@ -500,7 +555,7 @@ class Board:
             return self.get_issue(issue_id, db)
 
     def add_related(self, actor: int, issue_id: int, kind: str, **data: Any) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             if kind == "comment":
                 stamp = now(); cur = db.execute("INSERT INTO comments(issue_id,author_id,body,created_at,updated_at) VALUES(?,?,?,?,?)", (issue_id, actor, data["body"], stamp, stamp))
             elif kind == "checklist":
@@ -524,7 +579,7 @@ class Board:
         if text is not None: changes["text"] = text
         if completed is not None: changes["completed"] = int(completed)
         if not changes: raise ValueError("text or completed is required")
-        with self.connect() as db:
+        with self.transaction() as db:
             row = db.execute("SELECT issue_id FROM checklist_items WHERE id=?", (item_id,)).fetchone()
             if not row: raise KeyError("checklist item not found")
             db.execute(f"UPDATE checklist_items SET {','.join(f'{key}=?' for key in changes)} WHERE id=?", [*changes.values(), item_id])
@@ -532,7 +587,7 @@ class Board:
             return dict(db.execute("SELECT * FROM checklist_items WHERE id=?", (item_id,)).fetchone())
 
     def delete_checklist_item(self, actor: int, item_id: int) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             row = db.execute("SELECT issue_id FROM checklist_items WHERE id=?", (item_id,)).fetchone()
             if not row: raise KeyError("checklist item not found")
             db.execute("DELETE FROM checklist_items WHERE id=?", (item_id,))
@@ -540,7 +595,7 @@ class Board:
             return {"deleted": True, "id": item_id}
 
     def update_comment(self, actor: int, comment_id: int, body: str) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             row = db.execute("SELECT issue_id FROM comments WHERE id=?", (comment_id,)).fetchone()
             if not row: raise KeyError("comment not found")
             db.execute("UPDATE comments SET body=?,updated_at=? WHERE id=?", (body, now(), comment_id))
@@ -548,7 +603,7 @@ class Board:
             return dict(db.execute("SELECT * FROM comments WHERE id=?", (comment_id,)).fetchone())
 
     def delete_comment(self, actor: int, comment_id: int) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             row = db.execute("SELECT issue_id FROM comments WHERE id=?", (comment_id,)).fetchone()
             if not row: raise KeyError("comment not found")
             db.execute("DELETE FROM comments WHERE id=?", (comment_id,))
@@ -556,21 +611,21 @@ class Board:
             return {"deleted": True, "id": comment_id}
 
     def remove_label(self, actor: int, issue_id: int, label_id: int) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             cur = db.execute("DELETE FROM issue_labels WHERE issue_id=? AND label_id=?", (issue_id, label_id))
             if not cur.rowcount: raise KeyError("issue label not found")
             self._activity(db, actor, "issue", issue_id, "label_removed", {"label_id": label_id})
             return self.get_issue(issue_id, db)
 
     def remove_dependency(self, actor: int, issue_id: int, depends_on_id: int, relation: str = "blocks") -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             cur = db.execute("DELETE FROM dependencies WHERE issue_id=? AND depends_on_id=? AND kind=?", (issue_id, depends_on_id, relation))
             if not cur.rowcount: raise KeyError("dependency not found")
             self._activity(db, actor, "issue", issue_id, "dependency_removed", {"depends_on_id": depends_on_id, "relation": relation})
             return {"deleted": True, "issue_id": issue_id, "depends_on_id": depends_on_id, "relation": relation}
 
     def delete_attachment(self, actor: int, attachment_id: int) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             row = db.execute("SELECT issue_id FROM attachments WHERE id=?", (attachment_id,)).fetchone()
             if not row: raise KeyError("attachment not found")
             db.execute("DELETE FROM attachments WHERE id=?", (attachment_id,))
@@ -578,7 +633,7 @@ class Board:
             return {"deleted": True, "id": attachment_id}
 
     def delete_git_link(self, actor: int, link_id: int) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             row = db.execute("SELECT issue_id FROM git_links WHERE id=?", (link_id,)).fetchone()
             if not row: raise KeyError("git link not found")
             db.execute("DELETE FROM git_links WHERE id=?", (link_id,))
@@ -586,13 +641,13 @@ class Board:
             return {"deleted": True, "id": link_id}
 
     def create_label(self, actor: int, project_id: int, name: str, color: str = "#64748b", key: str | None = None) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             cur = db.execute("INSERT INTO labels(project_id,key,name,color) VALUES(?,?,?,?)", (project_id, key, name, color))
             self._activity(db, actor, "project", project_id, "label_created", {"name": name})
             return {"id": cur.lastrowid, "project_id": project_id, "key": key, "name": name, "color": color}
 
     def add_label(self, actor: int, issue_id: int, label_id: int) -> dict[str, Any]:
-        with self.connect() as db:
+        with self.transaction() as db:
             valid = db.execute("SELECT 1 FROM issues i JOIN labels l ON l.project_id=i.project_id WHERE i.id=? AND l.id=?", (issue_id, label_id)).fetchone()
             if not valid:
                 raise ValueError("label belongs to another project or does not exist")

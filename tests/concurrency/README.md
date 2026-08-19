@@ -1,5 +1,7 @@
 # Concurrency tests
 
-Thread and process stress scenarios will be added with the atomic issue counter
-and optimistic concurrency model. The current storage setup is not presented as
-proof of race-free domain operations.
+The suite exercises synchronized thread and process writers, optimistic
+conflicts on a shared issue, related-record and activity writes, bounded lock
+retry exhaustion, and dashboard/activity readers running alongside writers.
+Every stress scenario uses one `Board` per worker and a shared temporary SQLite
+file; process and mixed read/write scenarios finish with integrity checks.
