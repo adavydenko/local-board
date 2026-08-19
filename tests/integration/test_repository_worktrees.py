@@ -56,6 +56,13 @@ class WorktreeIntegrationTest(unittest.TestCase):
         self.assertEqual(Path(status["database"]), Repository.discover(self.root).database_path)
         self.assertEqual(status["schema_version"], 2)
 
+    def test_cli_actor_json_is_machine_readable(self):
+        env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
+        created = json.loads(run(sys.executable, "-m", "local_board.cli", "actor", "orchestrator", "--json", cwd=self.root, env=env).stdout)
+        self.assertEqual(created["name"], "orchestrator")
+        self.assertEqual(created["role"], "admin")
+        self.assertTrue(created["token"])
+
     def test_init_creates_tracked_config_and_config_cli_is_idempotent(self):
         env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
         run(sys.executable, "-m", "local_board.cli", "init", cwd=self.root, env=env)

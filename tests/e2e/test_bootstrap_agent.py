@@ -32,6 +32,7 @@ class BootstrapAgentE2ETest(unittest.TestCase):
             self.assertIn(str(path), initialized.stdout)
             self.assertTrue((repo / ".local-board" / "project.toml").exists())
             self.assertTrue((repo / ".local-board" / "AGENT.md").exists())
+            self.assertIn(".local-board/AGENT.md", (repo / "AGENTS.md").read_text())
             self.assertTrue((repo / ".agents" / "skills" / "local-board" / "SKILL.md").exists())
             self.assertIn(".local-board/state/", (repo / ".gitignore").read_text())
 
