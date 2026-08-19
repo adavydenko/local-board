@@ -8,6 +8,7 @@ from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from . import __version__
 from .config import ConfigError, ConfigService, load_config
 from .db import Board, SCHEMA_VERSION
 
@@ -55,6 +56,13 @@ def run_doctor(
         }
         for name, path in onboarding.items():
             checks.append(_check(name, "pass" if path.is_file() else "fail", str(path)))
+        agents_path = root / "AGENTS.md"
+        discoverable = agents_path.is_file() and ".local-board/AGENT.md" in agents_path.read_text(encoding="utf-8")
+        checks.append(_check(
+            "agent_discovery",
+            "pass" if discoverable else "warn",
+            f"{agents_path} references .local-board/AGENT.md" if discoverable else f"merge Local Board instructions into {agents_path}",
+        ))
 
     version = board.schema_version()
     checks.append(_check("database_schema", "pass" if version == SCHEMA_VERSION else "fail", f"schema {version}; supported {SCHEMA_VERSION}"))
@@ -76,7 +84,7 @@ def run_doctor(
             checks.append(_check("mcp_auth", "fail", "LOCAL_BOARD_TOKEN or --token is required for online checks"))
         else:
             try:
-                initialized = _mcp_request(url, token, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "local-board-doctor", "version": "0.1.0"}}})
+                initialized = _mcp_request(url, token, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "local-board-doctor", "version": __version__}}})
                 server = initialized["result"]["serverInfo"]
                 checks.append(_check("mcp_initialize", "pass", f"{server['name']} {server['version']}"))
                 tools = _mcp_request(url, token, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})["result"]["tools"]
