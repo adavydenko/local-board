@@ -43,6 +43,8 @@ class OnboardingTest(unittest.TestCase):
             skill.write_text("custom")
             self.assertEqual(install_onboarding(root), [])
             self.assertEqual(skill.read_text(), "custom")
+            agents = root / "AGENTS.md"
+            agents.write_text("custom root policy")
             install_onboarding(root, force=True)
             self.assertIn("name: local-board", skill.read_text())
-
+            self.assertEqual(agents.read_text(), "custom root policy")

@@ -55,6 +55,13 @@ def run_doctor(
         }
         for name, path in onboarding.items():
             checks.append(_check(name, "pass" if path.is_file() else "fail", str(path)))
+        agents_path = root / "AGENTS.md"
+        discoverable = agents_path.is_file() and ".local-board/AGENT.md" in agents_path.read_text(encoding="utf-8")
+        checks.append(_check(
+            "agent_discovery",
+            "pass" if discoverable else "warn",
+            f"{agents_path} references .local-board/AGENT.md" if discoverable else f"merge Local Board instructions into {agents_path}",
+        ))
 
     version = board.schema_version()
     checks.append(_check("database_schema", "pass" if version == SCHEMA_VERSION else "fail", f"schema {version}; supported {SCHEMA_VERSION}"))
