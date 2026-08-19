@@ -228,3 +228,10 @@ python -m pip install -e '.[test,browser-test]'
 python -m playwright install chromium
 python -m unittest tests.e2e.test_browser -v
 ```
+
+Run this browser command locally before submitting changes to the web UI. The
+required GitHub `Tests` workflow intentionally excludes browser provisioning so
+temporary package-mirror or Playwright download failures cannot block unrelated
+changes. Maintainers may run the optional `Browser E2E (optional)` workflow
+manually with `workflow_dispatch` when an additional hosted-runner check is
+useful.
