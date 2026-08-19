@@ -164,7 +164,19 @@ Issues carry a monotonically increasing `revision`. Mutation and transition tool
 
 Agents should call `claim_issue` before starting work. Claiming atomically assigns the authenticated actor and creates a renewable lease (30 minutes by default); only one actor can claim a given revision. Use `release_issue` to clear a claim. Projects whose `agent_policy.require_assignee_before_start` is enabled reject transitions into `in_progress` until an issue is claimed or assigned.
 
-SQLite still serializes writes internally. Local Board uses WAL mode and a busy timeout, while optimistic revisions protect domain data from lost updates. The concurrency suite exercises simultaneous threads and independent processes and finishes with SQLite integrity and foreign-key checks.
+SQLite still serializes writes internally. Local Board uses WAL mode and acquires
+write locks with `BEGIN IMMEDIATE`. Transient lock errors use a bounded,
+jittered exponential retry: by default each attempt has a 1000 ms SQLite busy
+timeout, with 6 retries and a 10 ms backoff base. These values can be adjusted
+through `Board(busy_timeout_ms=..., max_lock_retries=...,
+retry_base_seconds=...)`. Exhaustion raises `DatabaseBusyError`; arbitrary SQL
+writers that bypass `Board.transaction()` do not receive this behavior.
+
+Optimistic revisions protect domain data from lost updates. The concurrency
+suite exercises repeated simultaneous threads, synchronized independent
+processes, related-record writes, and dashboard/activity readers alongside
+writers, and finishes stress scenarios with SQLite integrity and foreign-key
+checks.
 
 ## Git branch linking
 
