@@ -1,0 +1,11 @@
+.local-board/state/
+.local-board/backups/
+.local-board/attachments/
+.local-board/secrets/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+coverage.xml
+dist/
+*.egg-info/

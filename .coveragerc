@@ -1,0 +1,13 @@
+[run]
+branch = True
+source = local_board
+
+[report]
+show_missing = True
+skip_covered = True
+fail_under = 75
+omit =
+    local_board/templates/*
+
+[xml]
+output = coverage.xml
