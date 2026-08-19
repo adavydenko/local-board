@@ -175,6 +175,24 @@ class Board:
             cur = db.execute("INSERT INTO actors(name,kind,role,token_hash,created_at) VALUES(?,?,?,?,?)", (name, kind, role, self._hash(token), now()))
             return {"id": cur.lastrowid, "name": name, "kind": kind, "role": role, "token": token}
 
+    def provision_actor(self, actor: int, name: str, kind: str = "agent", role: str = "member") -> dict[str, Any]:
+        """Create an identity through an authenticated administrator."""
+        self.require_role(actor, "admin")
+        value = self.create_actor(name, kind, role)
+        with self.connect() as db:
+            self._activity(db, actor, "actor", value["id"], "created", {"kind": kind, "role": role})
+        return value
+
+    def rotate_actor_token(self, actor: int, target: int | str) -> dict[str, Any]:
+        """Invalidate an actor's current token and return its one-time replacement."""
+        self.require_role(actor, "admin")
+        target_id = self.get_actor(target)["id"]
+        token = secrets.token_urlsafe(32)
+        with self.connect() as db:
+            db.execute("UPDATE actors SET token_hash=? WHERE id=?", (self._hash(token), target_id))
+            self._activity(db, actor, "actor", target_id, "token_rotated")
+        return {**self.get_actor(target_id), "token": token}
+
     def authenticate(self, token: str) -> dict[str, Any] | None:
         with self.connect() as db:
             row = db.execute("SELECT id,name,kind,role FROM actors WHERE token_hash=?", (self._hash(token),)).fetchone()

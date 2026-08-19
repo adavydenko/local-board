@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 
 from local_board.db import Board
-from local_board.mcp import call_tool, handle, schemas
+from local_board.mcp import READ_TOOLS, call_tool, handle, schemas
 
 
 class AgentContractTest(unittest.TestCase):
@@ -94,3 +94,22 @@ class AgentContractTest(unittest.TestCase):
         self.assertEqual(response["result"]["structuredContent"]["error"]["code"], "forbidden")
         read = handle(self.board, viewer["id"], {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "list_projects", "arguments": {}}})
         self.assertFalse(read["result"].get("isError", False))
+
+    def test_admin_can_provision_and_rotate_subagent_credentials(self):
+        created = self.call("create_actor", name="subagent-one", kind="agent", role="member")
+        self.assertEqual(self.board.authenticate(created["token"])["name"], "subagent-one")
+        self.assertEqual(self.board.activity("actor", created["id"])[0]["action"], "created")
+
+        rotated = self.call("rotate_actor_token", actor="subagent-one")
+        self.assertIsNone(self.board.authenticate(created["token"]))
+        self.assertEqual(self.board.authenticate(rotated["token"])["id"], created["id"])
+        self.assertEqual(self.board.activity("actor", created["id"])[0]["action"], "token_rotated")
+
+        denied = handle(self.board, self.reviewer["id"], {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "create_actor", "arguments": {"name": "forbidden"}}})
+        self.assertEqual(denied["result"]["structuredContent"]["error"]["code"], "forbidden")
+
+        member_tools = handle(self.board, self.reviewer["id"], {"jsonrpc": "2.0", "id": 12, "method": "tools/list"})["result"]["tools"]
+        self.assertNotIn("create_actor", {item["name"] for item in member_tools})
+        viewer = self.board.create_actor("credential-auditor", role="viewer")
+        viewer_tools = handle(self.board, viewer["id"], {"jsonrpc": "2.0", "id": 13, "method": "tools/list"})["result"]["tools"]
+        self.assertEqual({item["name"] for item in viewer_tools}, READ_TOOLS)
