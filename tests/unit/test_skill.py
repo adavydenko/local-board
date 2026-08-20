@@ -23,6 +23,22 @@ class SkillTest(unittest.TestCase):
         for name in required:
             self.assertIn(f"`{name}`", skill)
 
+    def test_skill_documents_issue_quality_and_git_policy(self):
+        skill = (ROOT / ".agents/skills/local-board/SKILL.md").read_text()
+        for issue_type in ("task", "bug", "feature", "chore", "epic"):
+            self.assertIn(f"`{issue_type}`", skill)
+        for priority in ("none", "low", "medium", "high", "urgent"):
+            self.assertIn(f"`{priority}`", skill)
+        for required_guidance in (
+            "## Describe new work",
+            "Markdown",
+            "checklist",
+            "agent_policy.branch_pattern",
+            "local-board sync-branch",
+            "LOCAL_BOARD_TOKEN",
+        ):
+            self.assertIn(required_guidance, skill)
+
     def test_tracked_examples_do_not_contain_real_tokens(self):
         paths = [ROOT / "examples/mcp-http.example.json", ROOT / "docs/agent-guide.md", ROOT / ".agents/skills/local-board/SKILL.md"]
         content = "\n".join(path.read_text() for path in paths)
