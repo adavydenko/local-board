@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from local_board.config import ConfigError, ConfigService, default_config, load_config
+from local_board.config import ConfigError, ConfigService, default_config, export_config, load_config, migrate_config
 from local_board.db import Board, ISSUE_TYPES
 
 
@@ -86,3 +86,26 @@ class ConfigTest(unittest.TestCase):
         self.path.write_text(content[:task_start] + task + content[next_workflow:])
         with self.assertRaisesRegex(ConfigError, "states used by issues"):
             service.apply(load_config(self.path))
+
+    def test_prune_and_state_migration_are_explicit(self):
+        service = ConfigService(self.board); service.apply(load_config(self.path))
+        actor = self.board.create_actor("migration-agent")
+        issue = self.board.create_issue(actor["id"], 1, "Move me")
+        issue = self.board.transition_issue(actor["id"], issue["id"], "todo")
+        content = self.path.read_text()
+        start, end = content.index("[workflows.task]"), content.index("[workflows.bug]")
+        task = content[start:end].replace('"backlog", "todo", "in_progress"', '"backlog", "in_progress"').replace('["backlog", "todo"],', '["backlog", "in_progress"],').replace('  ["todo", "in_progress"],\n', '').replace('  ["todo", "cancelled"],\n', '')
+        task += '\n[state_migrations.task]\ntodo = "in_progress"\n\n'
+        self.path.write_text(content[:start] + task + content[end:])
+        service.apply(load_config(self.path), prune=True, actor_id=actor["id"])
+        self.assertEqual(self.board.get_issue(issue["id"])["status"], "in_progress")
+        with self.board.connect() as db:
+            self.assertEqual(db.execute("SELECT actor_id FROM config_applies ORDER BY id DESC").fetchone()[0], actor["id"])
+            self.assertEqual(db.execute("SELECT value FROM metadata WHERE key='project.APP.config_digest'").fetchone()[0], load_config(self.path).digest)
+
+    def test_export_and_migrate_current_config(self):
+        ConfigService(self.board).apply(load_config(self.path))
+        exported = self.path.with_name("exported.toml")
+        result = export_config(self.board, "APP", exported)
+        self.assertEqual(result.project["key"], "APP")
+        self.assertEqual(migrate_config(exported).digest, result.digest)

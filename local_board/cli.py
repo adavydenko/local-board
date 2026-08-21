@@ -7,7 +7,7 @@ import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .config import ConfigError, ConfigService, default_config, load_config, suggested_key
+from .config import ConfigError, ConfigService, default_config, export_config, load_config, migrate_config, suggested_key
 from .backup import create_backup, restore_backup
 from .db import Board
 from .doctor import run_doctor
@@ -31,7 +31,11 @@ def main() -> None:
     doctor = sub.add_parser("doctor"); doctor.add_argument("--url", default="http://127.0.0.1:8765/mcp"); doctor.add_argument("--token", default=os.environ.get("LOCAL_BOARD_TOKEN")); doctor.add_argument("--offline", action="store_true"); doctor.add_argument("--json", action="store_true")
     config_parser = sub.add_parser("config")
     config_sub = config_parser.add_subparsers(dest="config_command", required=True)
-    config_sub.add_parser("validate"); config_sub.add_parser("plan"); config_sub.add_parser("apply")
+    config_sub.add_parser("validate")
+    plan_config = config_sub.add_parser("plan"); plan_config.add_argument("--prune", action="store_true")
+    apply_config = config_sub.add_parser("apply"); apply_config.add_argument("--prune", action="store_true"); apply_config.add_argument("--actor", type=int)
+    config_sub.add_parser("migrate")
+    export = config_sub.add_parser("export"); export.add_argument("project"); export.add_argument("--force", action="store_true")
     args = parser.parse_args(); board = Board(resolve_database_path(args.db)); board.init()
     try:
         repo = Repository.discover()
@@ -83,10 +87,16 @@ def main() -> None:
         if not result["ok"]: raise SystemExit(1)
     elif args.command == "config":
         try:
-            config = load_config(config_path)
-            if args.config_command == "validate": print(f"Valid: {config.path} (schema {config.schema_version}, digest {config.digest})")
-            elif args.config_command == "plan": print(json.dumps(ConfigService(board).plan(config), indent=2))
-            elif args.config_command == "apply": print(json.dumps(ConfigService(board).apply(config), indent=2))
+            if args.config_command == "export":
+                if config_path.exists() and not args.force: raise ConfigError(f"{config_path} exists; pass --force to replace it")
+                config = export_config(board, args.project, config_path); print(f"Exported: {config.path}")
+            elif args.config_command == "migrate":
+                config = migrate_config(config_path); print(f"Current: {config.path} (schema {config.schema_version})")
+            else:
+                config = load_config(config_path)
+                if args.config_command == "validate": print(f"Valid: {config.path} (schema {config.schema_version}, digest {config.digest})")
+                elif args.config_command == "plan": print(json.dumps(ConfigService(board).plan(config, prune=args.prune), indent=2))
+                elif args.config_command == "apply": print(json.dumps(ConfigService(board).apply(config, prune=args.prune, actor_id=args.actor), indent=2))
         except ConfigError as exc:
             raise SystemExit(f"configuration error: {exc}") from exc
     elif args.command == "sync-branch":

@@ -104,8 +104,15 @@ CREATE TABLE IF NOT EXISTS project_config (
 );
 """
 
-SCHEMA_VERSION = 2
-MIGRATIONS = {1: SCHEMA, 2: MIGRATION_2}
+MIGRATION_3 = """
+ALTER TABLE config_applies ADD COLUMN actor_id INTEGER REFERENCES actors(id) ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS metadata (
+  key TEXT PRIMARY KEY, value TEXT NOT NULL
+);
+"""
+
+SCHEMA_VERSION = 3
+MIGRATIONS = {1: SCHEMA, 2: MIGRATION_2, 3: MIGRATION_3}
 
 ISSUE_TYPES = ("task", "bug", "feature", "chore", "epic")
 PRIORITIES = ("none", "low", "medium", "high", "urgent")
@@ -365,6 +372,10 @@ class Board:
 
     def create_milestone(self, actor: int, project_id: int, name: str, description: str = "", due_at: str | None = None, key: str | None = None) -> dict[str, Any]:
         with self.transaction() as db:
+            if key:
+                managed = db.execute("SELECT managed_by FROM milestones WHERE project_id=? AND key=?", (project_id, key)).fetchone()
+                if managed and managed["managed_by"] == "config":
+                    raise ValueError("milestone is managed by .local-board/project.toml")
             cur = db.execute("INSERT INTO milestones(project_id,key,name,description,due_at,created_at) VALUES(?,?,?,?,?,?)", (project_id, key, name, description, due_at, now()))
             self._activity(db, actor, "milestone", cur.lastrowid, "created")
             return dict(db.execute("SELECT * FROM milestones WHERE id=?", (cur.lastrowid,)).fetchone())
