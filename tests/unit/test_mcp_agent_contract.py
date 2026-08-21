@@ -82,8 +82,46 @@ class AgentContractTest(unittest.TestCase):
     def test_tool_schemas_expose_enums_and_stable_refs(self):
         tools = {item["name"]: item for item in schemas()}
         self.assertIn("oneOf", tools["get_issue_context"]["inputSchema"]["properties"]["issue"])
+        self.assertEqual(len(tools["get_issue_context"]["inputSchema"]["properties"]["issue"]["oneOf"]), 1)
         self.assertEqual(tools["create_issue"]["inputSchema"]["properties"]["priority"]["enum"], ["none", "low", "medium", "high", "urgent"])
         self.assertIn("expected_revision", tools["transition_issue"]["inputSchema"]["required"])
+        self.assertEqual(set(tools["create_issue"]["x-errorResponses"]), {"not_found", "conflict", "invalid_transition", "blocked", "unauthorized", "retryable"})
+        self.assertIn("examples", tools["create_issue"]["inputSchema"])
+
+    def test_single_resource_discovery_and_related_object_keys(self):
+        self.call("create_milestone", project="AGT", key="m1", name="Milestone one")
+        self.call("create_label", project="AGT", key="api", name="API")
+        self.assertEqual(self.call("get_workflow", project="AGT", issue_type="feature")["issue_type"], "feature")
+        self.assertEqual(self.call("get_milestone", project="AGT", milestone="m1")["name"], "Milestone one")
+        self.assertEqual(self.call("get_label", project="AGT", label="api")["name"], "API")
+
+        issue = self.call("create_issue", project="AGT", title="Opaque related keys")
+        comment = self.call("add_comment", issue=issue["identifier"], body="Before")
+        item = self.call("add_checklist_item", issue=issue["identifier"], text="Finish")
+        attachment = self.call("add_attachment", issue=issue["identifier"], name="old", path="old.txt")
+        link = self.call("add_git_link", issue=issue["identifier"], link_kind="branch", ref="old")
+        context = self.call("get_issue_context", issue=issue["identifier"])
+        self.call("update_comment", comment=context["comments"][0]["key"], body="After")
+        completed = self.call("complete_checklist_item", item=context["checklist"][0]["key"])
+        self.assertTrue(completed["completed"])
+        self.call("update_attachment", attachment=context["attachments"][0]["key"], name="new")
+        self.call("update_git_link", link=context["git_links"][0]["key"], link_kind="commit", ref="abc123")
+        refreshed = self.call("get_issue_context", issue=issue["identifier"])
+        self.assertEqual(refreshed["comments"][0]["body"], "After")
+        self.assertEqual(refreshed["attachments"][0]["name"], "new")
+        self.assertEqual(refreshed["git_links"][0]["kind"], "commit")
+        self.assertEqual({comment["id"], item["id"], attachment["id"], link["id"]}, {1})
+
+    def test_update_delete_label_and_dependency(self):
+        self.call("create_label", project="AGT", key="api", name="API")
+        updated = self.call("update_label", project="AGT", label="api", name="Public API")
+        self.assertEqual(updated["name"], "Public API")
+        self.assertTrue(self.call("delete_label", project="AGT", label="api")["deleted"])
+        first = self.call("create_issue", project="AGT", title="First")
+        second = self.call("create_issue", project="AGT", title="Second")
+        self.call("add_dependency", issue=second["identifier"], depends_on=first["identifier"])
+        changed = self.call("update_dependency", issue=second["identifier"], depends_on=first["identifier"], new_relation="related")
+        self.assertEqual(changed["relation"], "related")
 
     def test_viewer_is_read_only_and_activity_tools_are_immutable(self):
         viewer = self.board.create_actor("audit-viewer", role="viewer")
@@ -91,7 +129,7 @@ class AgentContractTest(unittest.TestCase):
         self.assertNotIn("update_activity", names)
         self.assertNotIn("delete_activity", names)
         response = handle(self.board, viewer["id"], {"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {"name": "create_project", "arguments": {"key": "NOPE", "name": "Denied"}}})
-        self.assertEqual(response["result"]["structuredContent"]["error"]["code"], "forbidden")
+        self.assertEqual(response["result"]["structuredContent"]["error"]["code"], "unauthorized")
         read = handle(self.board, viewer["id"], {"jsonrpc": "2.0", "id": 10, "method": "tools/call", "params": {"name": "list_projects", "arguments": {}}})
         self.assertFalse(read["result"].get("isError", False))
 
@@ -106,7 +144,7 @@ class AgentContractTest(unittest.TestCase):
         self.assertEqual(self.board.activity("actor", created["id"])[0]["action"], "token_rotated")
 
         denied = handle(self.board, self.reviewer["id"], {"jsonrpc": "2.0", "id": 11, "method": "tools/call", "params": {"name": "create_actor", "arguments": {"name": "forbidden"}}})
-        self.assertEqual(denied["result"]["structuredContent"]["error"]["code"], "forbidden")
+        self.assertEqual(denied["result"]["structuredContent"]["error"]["code"], "unauthorized")
 
         member_tools = handle(self.board, self.reviewer["id"], {"jsonrpc": "2.0", "id": 12, "method": "tools/list"})["result"]["tools"]
         self.assertNotIn("create_actor", {item["name"] for item in member_tools})
