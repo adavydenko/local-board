@@ -131,6 +131,10 @@ class AuthorizationError(PermissionError):
     """The authenticated actor does not have permission for an operation."""
 
 
+class InvalidTransitionError(ValueError):
+    """A requested lifecycle transition is not part of the configured workflow."""
+
+
 def now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -370,6 +374,29 @@ class Board:
             result["config_digest"] = configured["digest"] if configured else None
             return result
 
+    def get_workflow(self, project: int | str, issue_type: str) -> dict[str, Any]:
+        if issue_type not in ISSUE_TYPES:
+            raise KeyError("workflow not found")
+        context = self.project_context(project)
+        workflow = next((item for item in context["workflows"] if item["issue_type"] == issue_type), None)
+        if workflow is None:
+            raise KeyError("workflow not found")
+        return workflow
+
+    def get_milestone(self, project: int | str, key: str) -> dict[str, Any]:
+        context = self.project_context(project)
+        milestone = next((item for item in context["milestones"] if item.get("key") == key), None)
+        if milestone is None:
+            raise KeyError("milestone not found")
+        return milestone
+
+    def get_label(self, project: int | str, key: str) -> dict[str, Any]:
+        context = self.project_context(project)
+        label = next((item for item in context["labels"] if item.get("key") == key), None)
+        if label is None:
+            raise KeyError("label not found")
+        return label
+
     def create_milestone(self, actor: int, project_id: int, name: str, description: str = "", due_at: str | None = None, key: str | None = None) -> dict[str, Any]:
         with self.transaction() as db:
             if key:
@@ -412,7 +439,7 @@ class Board:
             release = db.execute("SELECT * FROM releases WHERE id=?", (release_id,)).fetchone()
             if not release: raise KeyError("release not found")
             if release["revision"] != expected_revision: raise ConflictError("stale release revision")
-            if status not in allowed[release["status"]]: raise ValueError(f"invalid release transition {release['status']} -> {status}")
+            if status not in allowed[release["status"]]: raise InvalidTransitionError(f"invalid release transition {release['status']} -> {status}")
             stamp = now(); released_at = stamp if status == "released" else None
             db.execute("UPDATE releases SET status=?,released_at=?,revision=revision+1,updated_at=? WHERE id=?", (status, released_at, stamp, release_id))
             self._activity(db, actor, "release", release_id, "transitioned", {"from": release["status"], "to": status})
@@ -522,7 +549,7 @@ class Board:
             wf = db.execute("SELECT states_json,transitions_json FROM workflows WHERE project_id=? AND issue_type=?", (issue["project_id"], issue["type"])).fetchone()
             states, transitions = json.loads(wf[0]), json.loads(wf[1])
             if status not in states or [issue["status"], status] not in transitions:
-                raise ValueError(f"transition {issue['status']} -> {status} is not allowed")
+                raise InvalidTransitionError(f"transition {issue['status']} -> {status} is not allowed")
             policy_row = db.execute("SELECT agent_policy_json FROM project_config WHERE project_id=?", (issue["project_id"],)).fetchone()
             policy = json.loads(policy_row[0]) if policy_row else {}
             if status == "in_progress" and policy.get("require_assignee_before_start") and issue["assignee_id"] is None:
@@ -597,6 +624,17 @@ class Board:
             self._activity(db, actor, "issue", row["issue_id"], "checklist_updated", {"item_id": item_id, **changes})
             return dict(db.execute("SELECT * FROM checklist_items WHERE id=?", (item_id,)).fetchone())
 
+    def complete_checklist_item(self, actor: int, item_id: int) -> dict[str, Any]:
+        """Complete an item in one write transaction, safely under concurrent callers."""
+        with self.transaction() as db:
+            row = db.execute("SELECT issue_id,completed FROM checklist_items WHERE id=?", (item_id,)).fetchone()
+            if not row:
+                raise KeyError("checklist item not found")
+            if not row["completed"]:
+                db.execute("UPDATE checklist_items SET completed=1 WHERE id=? AND completed=0", (item_id,))
+                self._activity(db, actor, "issue", row["issue_id"], "checklist_completed", {"item_id": item_id})
+            return dict(db.execute("SELECT * FROM checklist_items WHERE id=?", (item_id,)).fetchone())
+
     def delete_checklist_item(self, actor: int, item_id: int) -> dict[str, Any]:
         with self.transaction() as db:
             row = db.execute("SELECT issue_id FROM checklist_items WHERE id=?", (item_id,)).fetchone()
@@ -650,6 +688,70 @@ class Board:
             db.execute("DELETE FROM git_links WHERE id=?", (link_id,))
             self._activity(db, actor, "issue", row["issue_id"], "git_link_deleted", {"link_id": link_id})
             return {"deleted": True, "id": link_id}
+
+    def update_attachment(self, actor: int, attachment_id: int, **changes: Any) -> dict[str, Any]:
+        allowed = {key: value for key, value in changes.items() if key in {"name", "path", "media_type"}}
+        if not allowed:
+            raise ValueError("at least one attachment field is required")
+        with self.transaction() as db:
+            row = db.execute("SELECT issue_id FROM attachments WHERE id=?", (attachment_id,)).fetchone()
+            if not row:
+                raise KeyError("attachment not found")
+            db.execute(f"UPDATE attachments SET {', '.join(f'{key}=?' for key in allowed)} WHERE id=?", (*allowed.values(), attachment_id))
+            self._activity(db, actor, "issue", row["issue_id"], "attachment_updated", {"attachment_id": attachment_id})
+            return dict(db.execute("SELECT * FROM attachments WHERE id=?", (attachment_id,)).fetchone())
+
+    def update_git_link(self, actor: int, link_id: int, **changes: Any) -> dict[str, Any]:
+        allowed = {key: value for key, value in changes.items() if key in {"kind", "ref", "url"}}
+        if not allowed:
+            raise ValueError("at least one Git link field is required")
+        if "kind" in allowed and allowed["kind"] not in {"branch", "commit", "pr", "mr"}:
+            raise ValueError("invalid Git link kind")
+        with self.transaction() as db:
+            row = db.execute("SELECT issue_id FROM git_links WHERE id=?", (link_id,)).fetchone()
+            if not row:
+                raise KeyError("Git link not found")
+            db.execute(f"UPDATE git_links SET {', '.join(f'{key}=?' for key in allowed)} WHERE id=?", (*allowed.values(), link_id))
+            self._activity(db, actor, "issue", row["issue_id"], "git_link_updated", {"link_id": link_id})
+            return dict(db.execute("SELECT * FROM git_links WHERE id=?", (link_id,)).fetchone())
+
+    def update_dependency(self, actor: int, issue_id: int, depends_on_id: int, relation: str, new_relation: str) -> dict[str, Any]:
+        if relation not in {"blocks", "related"} or new_relation not in {"blocks", "related"}:
+            raise ValueError("invalid dependency relation")
+        with self.transaction() as db:
+            cur = db.execute(
+                "UPDATE dependencies SET kind=? WHERE issue_id=? AND depends_on_id=? AND kind=?",
+                (new_relation, issue_id, depends_on_id, relation),
+            )
+            if not cur.rowcount:
+                raise KeyError("dependency not found")
+            self._activity(db, actor, "issue", issue_id, "dependency_updated", {"depends_on_id": depends_on_id, "relation": new_relation})
+            return {"issue_id": issue_id, "depends_on_id": depends_on_id, "relation": new_relation}
+
+    def update_label(self, actor: int, project_id: int, key: str, **changes: Any) -> dict[str, Any]:
+        allowed = {name: value for name, value in changes.items() if name in {"name", "color"}}
+        if not allowed:
+            raise ValueError("at least one label field is required")
+        with self.transaction() as db:
+            row = db.execute("SELECT id,managed_by FROM labels WHERE project_id=? AND key=?", (project_id, key)).fetchone()
+            if not row:
+                raise KeyError("label not found")
+            if row["managed_by"] == "config":
+                raise ConflictError("label is managed by .local-board/project.toml")
+            db.execute(f"UPDATE labels SET {', '.join(f'{name}=?' for name in allowed)} WHERE id=?", (*allowed.values(), row["id"]))
+            self._activity(db, actor, "project", project_id, "label_updated", {"key": key})
+            return dict(db.execute("SELECT * FROM labels WHERE id=?", (row["id"],)).fetchone())
+
+    def delete_label(self, actor: int, project_id: int, key: str) -> dict[str, Any]:
+        with self.transaction() as db:
+            row = db.execute("SELECT id,managed_by FROM labels WHERE project_id=? AND key=?", (project_id, key)).fetchone()
+            if not row:
+                raise KeyError("label not found")
+            if row["managed_by"] == "config":
+                raise ConflictError("label is managed by .local-board/project.toml")
+            db.execute("DELETE FROM labels WHERE id=?", (row["id"],))
+            self._activity(db, actor, "project", project_id, "label_deleted", {"key": key})
+            return {"deleted": True, "key": key}
 
     def create_label(self, actor: int, project_id: int, name: str, color: str = "#64748b", key: str | None = None) -> dict[str, Any]:
         with self.transaction() as db:
