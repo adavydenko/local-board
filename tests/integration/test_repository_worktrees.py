@@ -54,7 +54,7 @@ class WorktreeIntegrationTest(unittest.TestCase):
         status = json.loads(result.stdout)
         self.assertEqual(Path(status["repository"]), self.root.resolve())
         self.assertEqual(Path(status["database"]), Repository.discover(self.root).database_path)
-        self.assertEqual(status["schema_version"], 2)
+        self.assertEqual(status["schema_version"], 3)
 
     def test_cli_actor_json_is_machine_readable(self):
         env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
