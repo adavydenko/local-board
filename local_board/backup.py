@@ -26,7 +26,7 @@ def _validate(path: Path) -> None:
         with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
             if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError("backup failed SQLite integrity_check")
-            required = {"actors", "projects", "issues", "activity"}
+            required = {"actors", "issues", "activity", "board"}
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if not required <= tables:
                 raise ValueError("file is not a Local Board database")

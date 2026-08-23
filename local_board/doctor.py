@@ -57,38 +57,75 @@ def run_doctor(
         for name, path in onboarding.items():
             checks.append(_check(name, "pass" if path.is_file() else "fail", str(path)))
         agents_path = root / "AGENTS.md"
-        discoverable = agents_path.is_file() and ".local-board/AGENT.md" in agents_path.read_text(encoding="utf-8")
+        discoverable = agents_path.is_file() and ".local-board/AGENT.md" in agents_path.read_text(
+            encoding="utf-8"
+        )
         checks.append(_check(
             "agent_discovery",
             "pass" if discoverable else "warn",
-            f"{agents_path} references .local-board/AGENT.md" if discoverable else f"merge Local Board instructions into {agents_path}",
+            f"{agents_path} references .local-board/AGENT.md"
+            if discoverable else f"merge Local Board instructions into {agents_path}",
         ))
 
+    try:
+        info = board.get_board()
+        checks.append(_check("board", "pass", f"{info['prefix']}: {info['name']}"))
+    except KeyError as exc:
+        checks.append(_check("board", "fail", str(exc).strip("'")))
+
     version = board.schema_version()
-    checks.append(_check("database_schema", "pass" if version == SCHEMA_VERSION else "fail", f"schema {version}; supported {SCHEMA_VERSION}"))
+    checks.append(_check(
+        "database_schema",
+        "pass" if version == SCHEMA_VERSION else "fail",
+        f"schema {version}; supported {SCHEMA_VERSION}",
+    ))
     with board.connect() as db:
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         foreign_keys = [tuple(row) for row in db.execute("PRAGMA foreign_key_check")]
     checks.append(_check("database_integrity", "pass" if integrity == "ok" else "fail", integrity))
-    checks.append(_check("foreign_keys", "pass" if not foreign_keys else "fail", "ok" if not foreign_keys else f"{len(foreign_keys)} violation(s)"))
+    checks.append(_check(
+        "foreign_keys",
+        "pass" if not foreign_keys else "fail",
+        "ok" if not foreign_keys else f"{len(foreign_keys)} violation(s)",
+    ))
 
     if config is not None:
         try:
             plan = ConfigService(board).plan(config)
-            checks.append(_check("config_drift", "warn" if plan["changed"] else "pass", f"{len(plan['actions'])} pending action(s)", actions=plan["actions"]))
+            checks.append(_check(
+                "config_drift",
+                "warn" if plan["changed"] else "pass",
+                f"{len(plan['actions'])} pending action(s)",
+                actions=plan["actions"],
+            ))
         except (KeyError, ValueError) as exc:
             checks.append(_check("config_drift", "fail", str(exc).strip("'")))
 
     if online:
         if not token:
-            checks.append(_check("mcp_auth", "fail", "LOCAL_BOARD_TOKEN or --token is required for online checks"))
+            checks.append(_check(
+                "mcp_auth", "fail", "LOCAL_BOARD_TOKEN or --token is required for online checks",
+            ))
         else:
             try:
-                initialized = _mcp_request(url, token, {"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {}, "clientInfo": {"name": "local-board-doctor", "version": __version__}}})
+                initialized = _mcp_request(url, token, {
+                    "jsonrpc": "2.0",
+                    "id": 1,
+                    "method": "initialize",
+                    "params": {
+                        "protocolVersion": "2025-03-26",
+                        "capabilities": {},
+                        "clientInfo": {"name": "local-board-doctor", "version": __version__},
+                    },
+                })
                 server = initialized["result"]["serverInfo"]
                 checks.append(_check("mcp_initialize", "pass", f"{server['name']} {server['version']}"))
-                tools = _mcp_request(url, token, {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})["result"]["tools"]
-                checks.append(_check("mcp_tools", "pass" if tools else "fail", f"{len(tools)} tool(s) available"))
+                tools = _mcp_request(url, token, {
+                    "jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {},
+                })["result"]["tools"]
+                checks.append(_check(
+                    "mcp_tools", "pass" if tools else "fail", f"{len(tools)} tool(s) available",
+                ))
             except HTTPError as exc:
                 checks.append(_check("mcp_connectivity", "fail", f"HTTP {exc.code} from {url}"))
             except (URLError, TimeoutError, OSError, KeyError, ValueError) as exc:

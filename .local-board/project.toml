@@ -1,59 +1,43 @@
-schema_version = 1
+schema_version = 2
 
-[project]
-key = "APP"
-name = "Application"
-description = "Repository-local product board"
+[board]
+prefix = "LB"
+name = "Local Board"
+description = ""
 
 [defaults]
-issue_type = "task"
 priority = "medium"
-
-[[labels]]
-key = "backend"
-name = "Backend"
-color = "#64748b"
-
-[[labels]]
-key = "security"
-name = "Security"
-color = "#ef4444"
-
-[workflows.task]
-initial = "backlog"
-terminal = ["done", "cancelled"]
-states = [
-  "backlog",
-  "todo",
-  "in_progress",
-  "in_review",
-  "done",
-  "cancelled",
-]
-transitions = [
-  ["backlog", "todo"],
-  ["todo", "in_progress"],
-  ["in_progress", "in_review"],
-  ["in_review", "in_progress"],
-  ["in_review", "done"],
-  ["backlog", "cancelled"],
-  ["todo", "cancelled"],
-]
-
-[workflows.bug]
-initial = "triage"
-terminal = ["resolved", "wont_fix"]
-states = ["triage", "confirmed", "in_progress", "verification", "resolved", "wont_fix"]
-transitions = [
-  ["triage", "confirmed"],
-  ["triage", "wont_fix"],
-  ["confirmed", "in_progress"],
-  ["in_progress", "verification"],
-  ["verification", "in_progress"],
-  ["verification", "resolved"],
-]
 
 [agent_policy]
 require_assignee_before_start = true
-require_reviewer_for = ["feature", "bug"]
-branch_pattern = "{issue_key}-{slug}"
+
+# Status names are yours to change; categories are the contract.
+# Transitions are free: any status can move to any other status.
+[[statuses]]
+name = "Backlog"
+category = "backlog"
+
+[[statuses]]
+name = "Todo"
+category = "unstarted"
+
+[[statuses]]
+name = "In Progress"
+category = "started"
+
+[[statuses]]
+name = "In Review"
+category = "started"
+
+[[statuses]]
+name = "Done"
+category = "completed"
+
+[[statuses]]
+name = "Canceled"
+category = "canceled"
+
+[[labels]]
+key = "review_required"
+name = "Review required"
+color = "#f59e0b"

@@ -1,269 +1,562 @@
+"""MCP (JSON-RPC 2.0) transport over the clean-board domain in local_board.db.
+
+One board, one prefix, fixed-category statuses, free transitions. This module only
+adapts JSON-RPC requests and MCP tool arguments onto local_board.db.Board — all
+domain rules (revisions, cycles, roles) live there.
+"""
+
 from __future__ import annotations
 
-import copy
 import json
-from typing import Any
+from typing import Any, Callable
 
 from . import __version__
-from .db import AuthorizationError, Board, ConflictError, DatabaseBusyError, InvalidTransitionError, ISSUE_TYPES, PRIORITIES
+from .db import AuthorizationError, Board, GIT_LINK_KINDS, PRIORITIES
+from .errors import ERROR_RESPONSES, describe
 
 
-ISSUE_REF = {"description": "Stable issue identifier.", "oneOf": [{"type": "string", "pattern": "^[A-Za-z0-9]{2,10}-[1-9][0-9]*$"}], "examples": ["APP-12"]}
-PROJECT_REF = {"type": "string", "description": "Stable project key.", "pattern": "^[A-Za-z0-9]{2,10}$", "examples": ["APP"]}
-ACTOR_REF = {"type": "string", "description": "Stable actor name.", "minLength": 1, "examples": ["coding-agent"]}
-MILESTONE_REF = {"type": "string", "description": "Stable milestone key.", "minLength": 1, "examples": ["v1"]}
-LABEL_REF = {"type": "string", "description": "Stable label key.", "minLength": 1, "examples": ["backend"]}
-RELATED_REF = {"type": "string", "description": "Opaque stable key returned for the related object by get_issue_context.", "pattern": "^[A-Za-z0-9]{2,10}-[1-9][0-9]*:(comment|checklist|attachment|git):[1-9][0-9]*$", "examples": ["APP-12:comment:3"]}
-ERROR_RESPONSES = {
-    "not_found": "The stable identifier or key does not exist.",
-    "conflict": "The supplied revision is stale or the requested write conflicts with current state.",
-    "invalid_transition": "The target state is not reachable from the current workflow state.",
-    "blocked": "Policy or an incomplete dependency prevents the operation.",
-    "unauthorized": "The authenticated actor is not allowed to perform the operation.",
-    "retryable": "A transient storage or coordination failure may succeed when retried.",
+# -- shared argument schemas -------------------------------------------------------
+
+_ISSUE_PATTERN = r"^[A-Za-z0-9]{2,10}-[1-9][0-9]*$"
+
+ISSUE_REF = {
+    "description": "Issue identifier such as APP-12, or its internal id.",
+    "oneOf": [{"type": "string", "pattern": _ISSUE_PATTERN}, {"type": "integer", "minimum": 1}],
+}
+ISSUE_REF_OR_NULL = {
+    "description": "Issue identifier such as APP-12, or null to clear it.",
+    "oneOf": [
+        {"type": "string", "pattern": _ISSUE_PATTERN},
+        {"type": "integer", "minimum": 1},
+        {"type": "null"},
+    ],
+}
+ACTOR_REF = {"description": "Actor name or id.", "oneOf": [{"type": "string"}, {"type": "integer"}]}
+ACTOR_REF_OR_NULL = {
+    "description": "Actor name or id, or null to unassign.",
+    "oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}],
+}
+MILESTONE_REF = {
+    "description": "Milestone key, name, or id.",
+    "oneOf": [{"type": "string"}, {"type": "integer"}],
+}
+MILESTONE_REF_OR_NULL = {
+    "description": "Milestone key, name, or id, or null to clear it.",
+    "oneOf": [{"type": "string"}, {"type": "integer"}, {"type": "null"}],
+}
+LABEL_REF = {
+    "description": "Label key, name, or id.",
+    "oneOf": [{"type": "string"}, {"type": "integer"}],
 }
 
 
 def obj(properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
-    return {"type": "object", "properties": properties, "required": required or [], "additionalProperties": False}
+    return {
+        "type": "object",
+        "properties": properties,
+        "required": required or [],
+        "additionalProperties": False,
+    }
 
 
-def tool(name: str, description: str, properties: dict[str, Any] | None = None, required: list[str] | None = None) -> dict[str, Any]:
+def tool(
+    name: str,
+    description: str,
+    properties: dict[str, Any] | None = None,
+    required: list[str] | None = None,
+) -> dict[str, Any]:
     return {"name": name, "description": description, "inputSchema": obj(properties or {}, required)}
 
 
-TOOLS = [
-    tool("whoami", "Return the authenticated actor identity."),
-    tool("list_actors", "List human and agent identities available for assignment."),
-    tool("create_actor", "Provision an actor and return its bearer token once. Admin only; transfer the token through a secure out-of-band channel.", {"name": {"type": "string", "minLength": 1}, "kind": {"type": "string", "enum": ["agent", "human"], "default": "agent"}, "role": {"type": "string", "enum": ["member", "viewer"], "default": "member"}}, ["name"]),
-    tool("rotate_actor_token", "Invalidate an actor token and return its replacement once. Admin only.", {"actor": ACTOR_REF}, ["actor"]),
-    tool("set_actor_role", "Change an actor role. Admin only.", {"actor": ACTOR_REF, "role": {"type": "string", "enum": ["admin", "member", "viewer"]}}, ["actor", "role"]),
-    tool("list_projects", "List projects."),
-    tool("get_project_context", "Get project metadata, workflows, labels, milestones, defaults, and agent policy.", {"project": PROJECT_REF}, ["project"]),
-    tool("list_workflows", "List workflows configured for a project.", {"project": PROJECT_REF}, ["project"]),
-    tool("get_workflow", "Get one workflow by project key and issue type.", {"project": PROJECT_REF, "issue_type": {"type": "string", "enum": list(ISSUE_TYPES), "examples": ["feature"]}}, ["project", "issue_type"]),
-    tool("list_labels", "List labels configured for a project.", {"project": PROJECT_REF}, ["project"]),
-    tool("get_label", "Get one label by project and stable label key.", {"project": PROJECT_REF, "label": LABEL_REF}, ["project", "label"]),
-    tool("list_milestones", "List milestones configured for a project.", {"project": PROJECT_REF}, ["project"]),
-    tool("get_milestone", "Get one milestone by project and stable milestone key.", {"project": PROJECT_REF, "milestone": MILESTONE_REF}, ["project", "milestone"]),
-    tool("list_releases", "List project releases and lifecycle state.", {"project": PROJECT_REF}, ["project"]),
-    tool("create_release", "Create a planned project release.", {"project": PROJECT_REF, "name": {"type": "string", "minLength": 1}, "version": {"type": "string", "minLength": 1}, "description": {"type": "string"}, "target_at": {"type": "string"}}, ["project", "name", "version"]),
-    tool("transition_release", "Move a release through planned, active, released, or cancelled.", {"release_id": {"type": "integer", "minimum": 1}, "status": {"type": "string", "enum": ["active", "released", "cancelled"]}, "expected_revision": {"type": "integer", "minimum": 1}}, ["release_id", "status", "expected_revision"]),
-    tool("create_project", "Create a manually managed project.", {"key": {"type": "string", "pattern": "^[A-Za-z0-9]{2,10}$"}, "name": {"type": "string", "minLength": 1}, "description": {"type": "string", "default": ""}}, ["key", "name"]),
-    tool("list_issues", "Search issues and return summaries including stable identifiers and revisions.", {"project": PROJECT_REF, "status": {"type": "string"}, "query": {"type": "string"}}),
-    tool("get_issue_context", "Get the complete issue context required for agent work.", {"issue": ISSUE_REF}, ["issue"]),
-    tool("get_available_transitions", "Get policy-aware transitions for the current issue revision.", {"issue": ISSUE_REF}, ["issue"]),
-    tool("create_issue", "Create an issue using stable actor and project references.", {"project": PROJECT_REF, "title": {"type": "string", "minLength": 1, "examples": ["Implement discovery tools"]}, "type": {"type": "string", "enum": list(ISSUE_TYPES), "default": "task"}, "description": {"type": "string", "default": ""}, "priority": {"type": "string", "enum": list(PRIORITIES), "default": "medium"}, "milestone": MILESTONE_REF, "release_id": {"type": "integer"}, "assignee": ACTOR_REF, "reviewer": ACTOR_REF}, ["project", "title"]),
-    tool("update_issue", "Update issue fields if expected_revision is current.", {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}, "title": {"type": "string", "minLength": 1}, "description": {"type": "string"}, "priority": {"type": "string", "enum": list(PRIORITIES)}, "milestone": {"type": ["string", "null"], "description": "Stable milestone key, or null to clear it."}, "release_id": {"oneOf": [{"type": "integer"}, {"type": "null"}]}, "assignee": {"type": ["string", "null"], "description": "Stable actor name, or null to unassign."}, "reviewer": {"type": ["string", "null"], "description": "Stable actor name, or null to clear the reviewer."}, "position": {"type": "number"}}, ["issue", "expected_revision"]),
-    tool("transition_issue", "Move an issue through an allowed workflow transition.", {"issue": ISSUE_REF, "status": {"type": "string"}, "expected_revision": {"type": "integer", "minimum": 1}}, ["issue", "status", "expected_revision"]),
-    tool("claim_issue", "Atomically claim an issue for the authenticated actor.", {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}, "lease_seconds": {"type": "integer", "minimum": 60, "maximum": 86400, "default": 1800}}, ["issue", "expected_revision"]),
-    tool("release_issue", "Release an issue claimed by the authenticated actor.", {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}}, ["issue", "expected_revision"]),
-    tool("create_milestone", "Create a project milestone.", {"project": PROJECT_REF, "key": {"type": "string"}, "name": {"type": "string", "minLength": 1}, "description": {"type": "string"}, "due_at": {"type": "string"}}, ["project", "name"]),
-    tool("set_workflow", "Configure a manually managed workflow.", {"project": PROJECT_REF, "issue_type": {"type": "string", "enum": list(ISSUE_TYPES)}, "states": {"type": "array", "items": {"type": "string"}, "minItems": 1}, "transitions": {"type": "array", "items": {"type": "array", "items": {"type": "string"}, "minItems": 2, "maxItems": 2}},}, ["project", "issue_type", "states", "transitions"]),
-    tool("add_comment", "Add a Markdown comment.", {"issue": ISSUE_REF, "body": {"type": "string", "minLength": 1}}, ["issue", "body"]),
-    tool("update_comment", "Edit a comment.", {"comment": RELATED_REF, "body": {"type": "string", "minLength": 1}}, ["comment", "body"]),
-    tool("delete_comment", "Delete a comment.", {"comment": RELATED_REF}, ["comment"]),
-    tool("add_checklist_item", "Add a checklist item.", {"issue": ISSUE_REF, "text": {"type": "string", "minLength": 1}, "completed": {"type": "boolean", "default": False}, "position": {"type": "number", "default": 0}}, ["issue", "text"]),
-    tool("update_checklist_item", "Edit a checklist item.", {"item": RELATED_REF, "text": {"type": "string", "minLength": 1}, "completed": {"type": "boolean", "default": False}}, ["item"]),
-    tool("complete_checklist_item", "Atomically mark a checklist item complete.", {"item": RELATED_REF}, ["item"]),
-    tool("delete_checklist_item", "Delete a checklist item.", {"item": RELATED_REF}, ["item"]),
-    tool("add_dependency", "Add a blocking or related issue dependency.", {"issue": ISSUE_REF, "depends_on": ISSUE_REF, "relation": {"type": "string", "enum": ["blocks", "related"], "default": "blocks"}}, ["issue", "depends_on"]),
-    tool("remove_dependency", "Remove an issue dependency.", {"issue": ISSUE_REF, "depends_on": ISSUE_REF, "relation": {"type": "string", "enum": ["blocks", "related"], "default": "blocks"}}, ["issue", "depends_on"]),
-    tool("update_dependency", "Change the kind of an existing dependency.", {"issue": ISSUE_REF, "depends_on": ISSUE_REF, "relation": {"type": "string", "enum": ["blocks", "related"], "default": "blocks"}, "new_relation": {"type": "string", "enum": ["blocks", "related"]}}, ["issue", "depends_on", "new_relation"]),
-    tool("add_attachment", "Attach a repository-local file reference.", {"issue": ISSUE_REF, "name": {"type": "string"}, "path": {"type": "string"}, "media_type": {"type": "string"}}, ["issue", "name", "path"]),
-    tool("update_attachment", "Update an attachment reference.", {"attachment": RELATED_REF, "name": {"type": "string", "minLength": 1}, "path": {"type": "string", "minLength": 1}, "media_type": {"type": "string"}}, ["attachment"]),
-    tool("delete_attachment", "Delete an attachment reference.", {"attachment": RELATED_REF}, ["attachment"]),
-    tool("create_label", "Create a label in a manually managed project.", {"project": PROJECT_REF, "key": {"type": "string"}, "name": {"type": "string"}, "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$", "default": "#64748b"}}, ["project", "name"]),
-    tool("update_label", "Update a manually managed label by stable key.", {"project": PROJECT_REF, "label": LABEL_REF, "name": {"type": "string", "minLength": 1}, "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}}, ["project", "label"]),
-    tool("delete_label", "Delete a manually managed label by stable key.", {"project": PROJECT_REF, "label": LABEL_REF}, ["project", "label"]),
-    tool("add_label", "Attach a project label by stable key.", {"issue": ISSUE_REF, "label": LABEL_REF}, ["issue", "label"]),
-    tool("remove_label", "Remove a label from an issue by stable key.", {"issue": ISSUE_REF, "label": LABEL_REF}, ["issue", "label"]),
-    tool("add_git_link", "Associate a branch, commit, PR, or MR.", {"issue": ISSUE_REF, "link_kind": {"type": "string", "enum": ["branch", "commit", "pr", "mr"], "default": "branch"}, "ref": {"type": "string"}, "url": {"type": "string"}}, ["issue", "ref"]),
-    tool("update_git_link", "Update a Git link.", {"link": RELATED_REF, "link_kind": {"type": "string", "enum": ["branch", "commit", "pr", "mr"]}, "ref": {"type": "string", "minLength": 1}, "url": {"type": "string"}}, ["link"]),
-    tool("delete_git_link", "Delete a Git link.", {"link": RELATED_REF}, ["link"]),
-    tool("list_activity", "Read activity entries.", {"entity_type": {"type": "string"}, "entity_id": {"type": "integer"}, "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100}}),
+# -- tool catalog, grouped by required role ----------------------------------------
+
+TOOLS_READ = [
+    tool("whoami", "Return the authenticated actor's identity and role."),
+    tool("get_board_context", "Get board prefix, name, statuses, labels, milestones, and policy."),
+    tool(
+        "list_issues",
+        "Search issues and return summaries.",
+        {
+            "status": {"type": "string", "description": "Exact status name."},
+            "milestone": MILESTONE_REF,
+            "assignee": ACTOR_REF,
+            "label": LABEL_REF,
+            "parent": ISSUE_REF,
+            "query": {"type": "string", "description": "Substring match on title and description."},
+        },
+    ),
+    tool("get_issue", "Get one issue with labels, comments, dependencies, children, and git links.",
+         {"issue": ISSUE_REF}, ["issue"]),
+    tool(
+        "list_activity",
+        "Read the append-only activity log.",
+        {
+            "entity_type": {"type": "string", "description": "e.g. issue, milestone, label, actor."},
+            "entity_id": {"type": "integer", "description": "Internal id of the entity."},
+            "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
+        },
+    ),
 ]
 
-READ_TOOLS = {"whoami", "list_actors", "list_projects", "get_project_context", "list_workflows", "get_workflow", "list_labels", "get_label", "list_milestones", "get_milestone", "list_releases", "list_issues", "get_issue_context", "get_available_transitions", "list_activity"}
-ADMIN_TOOLS = {"create_actor", "rotate_actor_token", "set_actor_role"}
+TOOLS_WRITE = [
+    tool(
+        "create_issue",
+        "Create an issue on the board.",
+        {
+            "title": {"type": "string", "minLength": 1},
+            "description": {"type": "string", "description": "Markdown body.", "default": ""},
+            "priority": {"type": "string", "enum": list(PRIORITIES)},
+            "status": {"type": "string", "description": "Defaults to the board's initial status."},
+            "milestone": MILESTONE_REF,
+            "parent": ISSUE_REF,
+            "assignee": ACTOR_REF,
+            "labels": {"type": "array", "items": {"type": "string"}, "description": "Label keys or names."},
+        },
+        ["title"],
+    ),
+    tool(
+        "update_issue",
+        "Update issue fields if expected_revision is current.",
+        {
+            "issue": ISSUE_REF,
+            "expected_revision": {"type": "integer", "minimum": 1},
+            "title": {"type": "string", "minLength": 1},
+            "description": {"type": "string"},
+            "priority": {"type": "string", "enum": list(PRIORITIES)},
+            "status": {"type": "string", "description": "Any configured status; transitions are free."},
+            "assignee": ACTOR_REF_OR_NULL,
+            "milestone": MILESTONE_REF_OR_NULL,
+            "parent": ISSUE_REF_OR_NULL,
+            "labels": {"type": "array", "items": {"type": "string"}, "description": "Replaces all labels."},
+            "position": {"type": "number", "description": "Manual ordering within the status column."},
+        },
+        ["issue", "expected_revision"],
+    ),
+    tool(
+        "claim_issue",
+        "Atomically claim an issue for the authenticated actor with a time-boxed lease.",
+        {
+            "issue": ISSUE_REF,
+            "expected_revision": {"type": "integer", "minimum": 1},
+            "lease_seconds": {"type": "integer", "minimum": 60, "maximum": 86400, "default": 1800},
+        },
+        ["issue", "expected_revision"],
+    ),
+    tool(
+        "release_issue",
+        "Release an issue claimed by the authenticated actor.",
+        {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}},
+        ["issue", "expected_revision"],
+    ),
+    tool("add_comment", "Add a Markdown comment to an issue.",
+         {"issue": ISSUE_REF, "body": {"type": "string", "minLength": 1}}, ["issue", "body"]),
+    tool("update_comment", "Edit a comment. Only its author or an admin may edit it.",
+         {"comment_id": {"type": "integer", "minimum": 1}, "body": {"type": "string", "minLength": 1}},
+         ["comment_id", "body"]),
+    tool("add_dependency", "Record that an issue is blocked by another issue.",
+         {"issue": ISSUE_REF, "depends_on": ISSUE_REF}, ["issue", "depends_on"]),
+    tool("remove_dependency", "Remove a blocking dependency between two issues.",
+         {"issue": ISSUE_REF, "depends_on": ISSUE_REF}, ["issue", "depends_on"]),
+    tool(
+        "add_git_link",
+        "Associate a branch, commit, PR, or MR with an issue.",
+        {
+            "issue": ISSUE_REF,
+            "ref": {"type": "string", "minLength": 1, "description": "Branch name, SHA, or PR/MR number."},
+            "kind": {"type": "string", "enum": list(GIT_LINK_KINDS), "default": "branch"},
+            "url": {"type": "string"},
+        },
+        ["issue", "ref"],
+    ),
+    tool(
+        "create_milestone",
+        "Create a board milestone.",
+        {
+            "name": {"type": "string", "minLength": 1},
+            "key": {"type": "string", "description": "Stable short key, e.g. v1."},
+            "description": {"type": "string"},
+            "due_at": {"type": "string", "description": "ISO 8601 timestamp."},
+        },
+        ["name"],
+    ),
+    tool(
+        "create_label",
+        "Create a board label.",
+        {
+            "name": {"type": "string", "minLength": 1},
+            "key": {"type": "string", "description": "Stable short key."},
+            "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"},
+        },
+        ["name"],
+    ),
+]
+
+TOOLS_CORRECTION = [
+    tool("update_label", "Rename or recolor a label.",
+         {"label": LABEL_REF, "name": {"type": "string", "minLength": 1},
+          "color": {"type": "string", "pattern": "^#[0-9a-fA-F]{6}$"}}, ["label"]),
+    tool("delete_label", "Delete a label.", {"label": LABEL_REF}, ["label"]),
+    tool(
+        "update_milestone",
+        "Rename, redescribe, or reschedule a milestone.",
+        {
+            "milestone": MILESTONE_REF,
+            "name": {"type": "string", "minLength": 1},
+            "description": {"type": "string"},
+            "due_at": {"type": "string"},
+        },
+        ["milestone"],
+    ),
+    tool("delete_milestone", "Delete a milestone.", {"milestone": MILESTONE_REF}, ["milestone"]),
+    tool("delete_comment", "Delete a comment.", {"comment_id": {"type": "integer", "minimum": 1}},
+         ["comment_id"]),
+    tool(
+        "update_git_link",
+        "Update a Git link.",
+        {
+            "link_id": {"type": "integer", "minimum": 1},
+            "kind": {"type": "string", "enum": list(GIT_LINK_KINDS)},
+            "ref": {"type": "string", "minLength": 1},
+            "url": {"type": "string"},
+        },
+        ["link_id"],
+    ),
+    tool(
+        "delete_git_link",
+        "Delete a Git link.",
+        {"link_id": {"type": "integer", "minimum": 1}},
+        ["link_id"],
+    ),
+]
+
+TOOLS_ADMIN = [
+    tool(
+        "create_actor",
+        "Provision a new actor and return its bearer token once. Admin only.",
+        {
+            "name": {"type": "string", "minLength": 1},
+            "kind": {"type": "string", "enum": ["agent", "human"], "default": "agent"},
+            "role": {"type": "string", "enum": ["member", "viewer", "admin"], "default": "member"},
+        },
+        ["name"],
+    ),
+    tool("rotate_actor_token", "Invalidate an actor's token and return its replacement once. Admin only.",
+         {"actor": ACTOR_REF}, ["actor"]),
+    tool("set_actor_role", "Change an actor's role. Admin only.",
+         {"actor": ACTOR_REF, "role": {"type": "string", "enum": ["admin", "member", "viewer"]}},
+         ["actor", "role"]),
+]
+
+READ_TOOLS = {item["name"] for item in TOOLS_READ}
+WRITE_TOOLS = {item["name"] for item in TOOLS_WRITE}
+CORRECTION_TOOLS = {item["name"] for item in TOOLS_CORRECTION}
+ADMIN_TOOLS = {item["name"] for item in TOOLS_ADMIN}
+
+_ALL_TOOLS = TOOLS_READ + TOOLS_WRITE + TOOLS_CORRECTION + TOOLS_ADMIN
+for _entry in _ALL_TOOLS:
+    _entry["x-errorResponses"] = ERROR_RESPONSES
+
+_ROLE_TOOLS = {
+    "viewer": TOOLS_READ,
+    "member": TOOLS_READ + TOOLS_WRITE,
+    "admin": _ALL_TOOLS,
+}
 
 
 def schemas(role: str | None = None) -> list[dict[str, Any]]:
-    """Return self-documenting JSON Schemas, including stable domain errors."""
-    tools = copy.deepcopy(TOOLS)
-    for item in tools:
-        schema = item["inputSchema"]
-        schema["description"] = f"Arguments for {item['name']}."
-        schema["examples"] = [{}] if not schema["required"] else [
-            {name: prop.get("examples", [prop.get("default")])[0] for name, prop in schema["properties"].items() if name in schema["required"] and (prop.get("examples") or "default" in prop)}
-        ]
-        for name, prop in schema["properties"].items():
-            prop.setdefault("description", name.replace("_", " ").capitalize() + ".")
-            if prop.get("type") == "array":
-                prop.setdefault("items", {})
-            if "examples" not in prop and "default" in prop:
-                prop["examples"] = [prop["default"]]
-        item["x-errorResponses"] = copy.deepcopy(ERROR_RESPONSES)
-        item["outputSchema"] = {
-            "description": "Tool result, or a documented domain error when isError is true.",
-            "oneOf": [
-                {},
-                {"type": "object", "required": ["error"], "properties": {"error": {"type": "object", "required": ["code", "message", "retryable"], "properties": {"code": {"type": "string", "enum": list(ERROR_RESPONSES)}, "message": {"type": "string"}, "retryable": {"type": "boolean"}}}}},
-            ],
-        }
-    if role == "viewer":
-        return [item for item in tools if item["name"] in READ_TOOLS]
-    if role == "member":
-        return [item for item in tools if item["name"] not in ADMIN_TOOLS]
-    return tools
+    """Return the tool list available to a role. Built once at import; never copied."""
+    return _ROLE_TOOLS.get(role, _ALL_TOOLS)
 
 
-def _actor_id(board: Board, value: Any) -> int | None:
-    return None if value is None else board.get_actor(value)["id"]
+# -- reference resolution -----------------------------------------------------------
+
+def _resolve_actor(board: Board, value: int | str) -> int:
+    return board.get_actor(value)["id"]
 
 
-def _label_id(board: Board, issue_id: int, value: int | str) -> int:
-    if isinstance(value, int): return value
-    issue = board.get_issue(issue_id)
-    context = board.project_context(issue["project_id"])
-    found = next((label for label in context["labels"] if label.get("key") == value or label["name"] == value), None)
-    if not found: raise KeyError("label not found")
-    return found["id"]
-
-
-def _related_id(value: int | str, expected_kind: str) -> int:
-    """Resolve an opaque related-object key; integers remain a legacy internal API."""
+def _resolve_milestone(board: Board, value: int | str) -> int:
     if isinstance(value, int):
         return value
-    try:
-        _, kind, raw_id = value.rsplit(":", 2)
-        if kind != expected_kind:
-            raise ValueError
-        return int(raw_id)
-    except (AttributeError, TypeError, ValueError) as exc:
-        raise ValueError(f"invalid {expected_kind} key") from exc
+    for milestone in board.board_context()["milestones"]:
+        if milestone.get("key") == value or milestone["name"] == value:
+            return milestone["id"]
+    raise KeyError("milestone not found")
 
 
-def _with_related_keys(value: Any) -> Any:
-    """Add stable opaque keys to issue-related records returned through MCP."""
-    if not isinstance(value, dict) or "identifier" not in value:
-        return value
-    identifier = value["identifier"]
-    for collection, kind in (("comments", "comment"), ("checklist", "checklist"), ("attachments", "attachment"), ("git_links", "git")):
-        for record in value.get(collection, []):
-            if "id" in record:
-                record["key"] = f"{identifier}:{kind}:{record['id']}"
-    return value
+# -- tool handlers --------------------------------------------------------------------
+
+def _whoami(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.get_actor(actor)
 
 
-def call_tool(board: Board, actor: int, name: str, args: dict[str, Any]) -> Any:
-    args = dict(args)
+def _get_board_context(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.board_context()
+
+
+def _list_issues(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    milestone_id = _resolve_milestone(board, args["milestone"]) if "milestone" in args else None
+    assignee_id = _resolve_actor(board, args["assignee"]) if "assignee" in args else None
+    parent_id = board.resolve_issue(args["parent"]) if "parent" in args else None
+    return board.list_issues(
+        status=args.get("status"),
+        milestone_id=milestone_id,
+        assignee_id=assignee_id,
+        label=args.get("label"),
+        parent_id=parent_id,
+        query=args.get("query"),
+    )
+
+
+def _get_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.get_issue(board.resolve_issue(args["issue"]))
+
+
+def _list_activity(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.activity(
+        entity_type=args.get("entity_type"),
+        entity_id=args.get("entity_id"),
+        limit=args.get("limit", 100),
+    )
+
+
+def _create_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    milestone_id = _resolve_milestone(board, args["milestone"]) if "milestone" in args else None
+    parent_id = board.resolve_issue(args["parent"]) if "parent" in args else None
+    assignee_id = _resolve_actor(board, args["assignee"]) if "assignee" in args else None
+    return board.create_issue(
+        actor,
+        args["title"],
+        args.get("description", ""),
+        priority=args.get("priority"),
+        status=args.get("status"),
+        milestone_id=milestone_id,
+        parent_id=parent_id,
+        assignee_id=assignee_id,
+        labels=args.get("labels"),
+    )
+
+
+def _update_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    issue_id = board.resolve_issue(args["issue"])
+    fields: dict[str, Any] = {"expected_revision": args["expected_revision"]}
+    for field in ("title", "description", "priority", "status", "position"):
+        if field in args:
+            fields[field] = args[field]
+    if "assignee" in args:
+        value = args["assignee"]
+        fields["assignee_id"] = None if value is None else _resolve_actor(board, value)
+    if "milestone" in args:
+        value = args["milestone"]
+        fields["milestone_id"] = None if value is None else _resolve_milestone(board, value)
+    if "parent" in args:
+        value = args["parent"]
+        fields["parent_id"] = None if value is None else board.resolve_issue(value)
+    if "labels" in args:
+        fields["labels"] = args["labels"]
+    return board.update_issue(actor, issue_id, **fields)
+
+
+def _claim_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    issue_id = board.resolve_issue(args["issue"])
+    return board.claim_issue(actor, issue_id, args["expected_revision"], args.get("lease_seconds", 1800))
+
+
+def _release_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    issue_id = board.resolve_issue(args["issue"])
+    return board.release_issue(actor, issue_id, args["expected_revision"])
+
+
+def _add_comment(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    issue_id = board.resolve_issue(args["issue"])
+    return board.add_comment(actor, issue_id, args["body"])
+
+
+def _update_comment(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.update_comment(actor, args["comment_id"], args["body"])
+
+
+def _delete_comment(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.delete_comment(actor, args["comment_id"])
+
+
+def _add_dependency(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    issue_id = board.resolve_issue(args["issue"])
+    depends_on_id = board.resolve_issue(args["depends_on"])
+    return board.add_dependency(actor, issue_id, depends_on_id)
+
+
+def _remove_dependency(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    issue_id = board.resolve_issue(args["issue"])
+    depends_on_id = board.resolve_issue(args["depends_on"])
+    return board.remove_dependency(actor, issue_id, depends_on_id)
+
+
+def _add_git_link(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    issue_id = board.resolve_issue(args["issue"])
+    return board.add_git_link(actor, issue_id, args["ref"], args.get("kind", "branch"), args.get("url"))
+
+
+def _update_git_link(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    changes = {field: args[field] for field in ("kind", "ref", "url") if field in args}
+    return board.update_git_link(actor, args["link_id"], **changes)
+
+
+def _delete_git_link(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.delete_git_link(actor, args["link_id"])
+
+
+def _create_milestone(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.create_milestone(
+        actor, args["name"], args.get("description", ""), args.get("due_at"), args.get("key")
+    )
+
+
+def _update_milestone(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    changes = {field: args[field] for field in ("name", "description", "due_at") if field in args}
+    return board.update_milestone(actor, args["milestone"], **changes)
+
+
+def _delete_milestone(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.delete_milestone(actor, args["milestone"])
+
+
+def _create_label(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.create_label(actor, args["name"], args.get("color", "#64748b"), args.get("key"))
+
+
+def _update_label(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    changes = {field: args[field] for field in ("name", "color") if field in args}
+    return board.update_label(actor, args["label"], **changes)
+
+
+def _delete_label(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.delete_label(actor, args["label"])
+
+
+def _create_actor(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.provision_actor(actor, args["name"], args.get("kind", "agent"), args.get("role", "member"))
+
+
+def _rotate_actor_token(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.rotate_actor_token(actor, args["actor"])
+
+
+def _set_actor_role(board: Board, actor: int, args: dict[str, Any]) -> Any:
+    return board.set_actor_role(actor, args["actor"], args["role"])
+
+
+_HANDLERS: dict[str, Callable[[Board, int, dict[str, Any]], Any]] = {
+    "whoami": _whoami,
+    "get_board_context": _get_board_context,
+    "list_issues": _list_issues,
+    "get_issue": _get_issue,
+    "list_activity": _list_activity,
+    "create_issue": _create_issue,
+    "update_issue": _update_issue,
+    "claim_issue": _claim_issue,
+    "release_issue": _release_issue,
+    "add_comment": _add_comment,
+    "update_comment": _update_comment,
+    "add_dependency": _add_dependency,
+    "remove_dependency": _remove_dependency,
+    "add_git_link": _add_git_link,
+    "create_milestone": _create_milestone,
+    "create_label": _create_label,
+    "update_label": _update_label,
+    "delete_label": _delete_label,
+    "update_milestone": _update_milestone,
+    "delete_milestone": _delete_milestone,
+    "delete_comment": _delete_comment,
+    "update_git_link": _update_git_link,
+    "delete_git_link": _delete_git_link,
+    "create_actor": _create_actor,
+    "rotate_actor_token": _rotate_actor_token,
+    "set_actor_role": _set_actor_role,
+}
+
+
+def call_tool(board: Board, actor: int, name: str, arguments: dict[str, Any]) -> Any:
+    args = dict(arguments)
     identity = board.get_actor(actor)
-    if name not in READ_TOOLS and identity["role"] == "viewer":
+    if identity["role"] == "viewer" and name not in READ_TOOLS:
         raise AuthorizationError("viewer role is read-only")
-    if name == "create_actor": return board.provision_actor(actor, **args)
-    if name == "rotate_actor_token": return board.rotate_actor_token(actor, args["actor"])
-    if name == "set_actor_role": return board.set_actor_role(actor, args["actor"], args["role"])
-    if name == "whoami": return board.get_actor(actor)
-    if name == "list_actors": return board.list_actors()
-    if name == "list_projects": return board.list_projects()
-    if name == "get_project_context": return board.project_context(args["project"])
-    if name in {"list_workflows", "list_labels", "list_milestones", "list_releases"}: return board.project_context(args["project"])[name.removeprefix("list_")]
-    if name == "get_workflow": return board.get_workflow(args["project"], args["issue_type"])
-    if name == "get_milestone": return board.get_milestone(args["project"], args["milestone"])
-    if name == "get_label": return board.get_label(args["project"], args["label"])
-    if name == "create_release": args["project_id"] = board.resolve_project(args.pop("project")); return board.create_release(actor, **args)
-    if name == "transition_release": return board.transition_release(actor, **args)
-    if name == "create_project": return board.create_project(actor, **args)
-    if name == "list_issues":
-        if "project" in args: args["project_id"] = board.resolve_project(args.pop("project"))
-        return board.list_issues(**args)
-    if name == "get_issue_context": return _with_related_keys(board.get_issue_context(args["issue"]))
-    if name == "get_available_transitions":
-        context = board.get_issue_context(args["issue"])
-        return {"issue": context["identifier"], "revision": context["revision"], "status": context["status"], "blocked": context["blocked"], "transitions": context["available_transitions"]}
-    if name == "create_issue":
-        args["project_id"] = board.resolve_project(args.pop("project"))
-        if "type" in args: args["issue_type"] = args.pop("type")
-        if "assignee" in args: args["assignee_id"] = _actor_id(board, args.pop("assignee"))
-        if "reviewer" in args: args["reviewer_id"] = _actor_id(board, args.pop("reviewer"))
-        if "milestone" in args: args["milestone_id"] = args.pop("milestone") if isinstance(args["milestone"], int) else _milestone_id(board, args["project_id"], args.pop("milestone"))
-        return board.create_issue(actor, **args)
-    if name == "update_issue":
-        issue_id = board.resolve_issue(args.pop("issue"))
-        if "assignee" in args: args["assignee_id"] = _actor_id(board, args.pop("assignee"))
-        if "reviewer" in args: args["reviewer_id"] = _actor_id(board, args.pop("reviewer"))
-        if "milestone" in args:
-            value = args.pop("milestone"); project_id = board.get_issue(issue_id)["project_id"]
-            args["milestone_id"] = None if value is None else value if isinstance(value, int) else _milestone_id(board, project_id, value)
-        return board.update_issue(actor, issue_id, **args)
-    if name in {"transition_issue", "claim_issue", "release_issue"}:
-        args["issue_id"] = board.resolve_issue(args.pop("issue"))
-        return getattr(board, name)(actor, **args)
-    if name == "create_milestone": args["project_id"] = board.resolve_project(args.pop("project")); return board.create_milestone(actor, **args)
-    if name == "set_workflow": args["project_id"] = board.resolve_project(args.pop("project")); return board.set_workflow(actor, **args)
-    if name in {"add_comment", "add_checklist_item", "add_attachment", "add_git_link"}:
-        issue_id = board.resolve_issue(args.pop("issue")); kind = name.removeprefix("add_").replace("checklist_item", "checklist")
-        return board.add_related(actor, issue_id, kind, **args)
-    if name == "add_dependency":
-        issue_id = board.resolve_issue(args.pop("issue")); args["depends_on_id"] = board.resolve_issue(args.pop("depends_on")); return board.add_related(actor, issue_id, "dependency", **args)
-    related_operations = {
-        "update_comment": ("comment", "comment_id"), "delete_comment": ("comment", "comment_id"),
-        "update_checklist_item": ("checklist", "item_id"), "complete_checklist_item": ("checklist", "item_id"),
-        "delete_checklist_item": ("checklist", "item_id"), "update_attachment": ("attachment", "attachment_id"),
-        "delete_attachment": ("attachment", "attachment_id"), "update_git_link": ("git", "link_id"),
-        "delete_git_link": ("git", "link_id"),
-    }
-    if name in related_operations:
-        kind, internal_name = related_operations[name]
-        public_name = {"comment": "comment", "checklist": "item", "attachment": "attachment", "git": "link"}[kind]
-        raw = args.pop(public_name, args.pop(internal_name, None))
-        if raw is None: raise ValueError(f"{public_name} is required")
-        args[internal_name] = _related_id(raw, kind)
-        if name == "update_git_link" and "link_kind" in args: args["kind"] = args.pop("link_kind")
-        return getattr(board, name)(actor, **args)
-    if name == "remove_dependency": return board.remove_dependency(actor, board.resolve_issue(args["issue"]), board.resolve_issue(args["depends_on"]), args.get("relation", "blocks"))
-    if name == "update_dependency": return board.update_dependency(actor, board.resolve_issue(args["issue"]), board.resolve_issue(args["depends_on"]), args.get("relation", "blocks"), args["new_relation"])
-    if name == "create_label": args["project_id"] = board.resolve_project(args.pop("project")); return board.create_label(actor, **args)
-    if name in {"update_label", "delete_label"}:
-        project_id = board.resolve_project(args.pop("project")); key = args.pop("label")
-        return getattr(board, name)(actor, project_id, key, **args)
-    if name in {"add_label", "remove_label"}:
-        issue_id = board.resolve_issue(args["issue"]); label_id = _label_id(board, issue_id, args["label"]); return getattr(board, name)(actor, issue_id, label_id)
-    if name == "list_activity": return board.activity(**args)
-    raise KeyError(f"unknown tool: {name}")
+    if identity["role"] == "member" and (name in CORRECTION_TOOLS or name in ADMIN_TOOLS):
+        raise AuthorizationError("this operation requires the admin role")
+    handler = _HANDLERS.get(name)
+    if handler is None:
+        raise KeyError(f"unknown tool: {name}")
+    return handler(board, actor, args)
 
 
-def _milestone_id(board: Board, project_id: int, value: str) -> int:
-    milestone = next((item for item in board.project_context(project_id)["milestones"] if item.get("key") == value or item["name"] == value), None)
-    if not milestone: raise KeyError("milestone not found")
-    return milestone["id"]
+# -- connection instructions ---------------------------------------------------------
+
+def _instructions(board: Board, actor: int) -> str:
+    """A compact plain-text briefing replacing separate whoami/context startup calls."""
+    identity = board.get_actor(actor)
+    try:
+        context = board.board_context()
+    except KeyError:
+        return (
+            f"You are {identity['name']}, role {identity['role']}. "
+            "This board has not been configured yet; run `local-board init` first."
+        )
+    statuses = ", ".join(f"{status['name']} ({status['category']})" for status in context["statuses"])
+    label_keys = ", ".join((label["key"] or label["name"]) for label in context["labels"]) or "none defined"
+    milestone_keys = ", ".join(
+        (milestone["key"] or milestone["name"]) for milestone in context["milestones"]
+    ) or "none defined"
+    lines = [
+        f"You are {identity['name']}, role {identity['role']}, on board "
+        f"{context['prefix']} ({context['name']}).",
+        f"Statuses in order: {statuses}.",
+        f"Label keys: {label_keys}.",
+        f"Milestone keys: {milestone_keys}.",
+        f"Agent policy: {json.dumps(context['agent_policy'], ensure_ascii=False)}.",
+        "Transitions are free. 'blocked' is advisory. "
+        "Pass expected_revision from your latest read on every mutation.",
+    ]
+    return "\n".join(lines)
+
+
+def _call_tool_result(
+    board: Board, actor: int, name: str | None, arguments: dict[str, Any]
+) -> dict[str, Any]:
+    try:
+        value = call_tool(board, actor, name, arguments)
+        return {
+            "content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, default=str)}],
+            "structuredContent": value,
+        }
+    except Exception as exc:
+        status, code, message, retryable = describe(exc)
+        error = {"code": code, "message": message, "retryable": retryable}
+        return {
+            "content": [{"type": "text", "text": json.dumps(error, ensure_ascii=False, default=str)}],
+            "structuredContent": {"error": error},
+            "isError": True,
+        }
 
 
 def handle(board: Board, actor: int, request: dict[str, Any]) -> dict[str, Any] | None:
     request_id = request.get("id")
     method = request.get("method")
-    if method == "notifications/initialized": return None
+    if method == "notifications/initialized":
+        return None
     if method == "initialize":
-        result = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {"listChanged": False}}, "serverInfo": {"name": "local-board", "version": __version__}}
-    elif method == "ping": result = {}
-    elif method == "tools/list": result = {"tools": schemas(board.get_actor(actor)["role"])}
+        result = {
+            "protocolVersion": "2025-03-26",
+            "capabilities": {"tools": {"listChanged": False}},
+            "serverInfo": {"name": "local-board", "version": __version__},
+            "instructions": _instructions(board, actor),
+        }
+    elif method == "ping":
+        result = {}
+    elif method == "tools/list":
+        role = board.get_actor(actor)["role"]
+        result = {"tools": schemas(role)}
     elif method == "tools/call":
         params = request.get("params", {})
-        try:
-            value = call_tool(board, actor, params["name"], params.get("arguments", {}))
-            result = {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False, default=str)}], "structuredContent": value}
-        except (AuthorizationError, ConflictError, DatabaseBusyError, InvalidTransitionError, ValueError, KeyError, TypeError) as exc:
-            message = str(exc).strip("'")
-            if isinstance(exc, AuthorizationError): code = "unauthorized"
-            elif isinstance(exc, ConflictError): code = "conflict"
-            elif isinstance(exc, DatabaseBusyError): code = "retryable"
-            elif isinstance(exc, InvalidTransitionError): code = "invalid_transition"
-            elif isinstance(exc, KeyError): code = "not_found"
-            elif "blocked" in message or "claimed or assigned" in message: code = "blocked"
-            else: code = "invalid_request"
-            error = {"code": code, "message": message, "retryable": isinstance(exc, (ConflictError, DatabaseBusyError))}
-            result = {"content": [{"type": "text", "text": json.dumps(error)}], "structuredContent": {"error": error}, "isError": True}
+        result = _call_tool_result(board, actor, params.get("name"), params.get("arguments", {}))
     else:
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "Method not found"}}
     return {"jsonrpc": "2.0", "id": request_id, "result": result}

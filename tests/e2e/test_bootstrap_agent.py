@@ -1,74 +1,112 @@
+"""End-to-end: an agent bootstraps from MCP initialize alone and completes work."""
+
 import json
-import os
-import subprocess
-import sys
 import tempfile
-import time
+import threading
 import unittest
+import urllib.request
 from pathlib import Path
-from urllib.request import Request, urlopen
-import socket
 
+from local_board.config import ConfigService, default_config, load_config
 from local_board.db import Board
-from local_board.repository import Repository
+from local_board.web import make_handler
+
+from http.server import ThreadingHTTPServer
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+class BootstrapAgentTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        root = Path(self.tmp.name)
+        self.board = Board(root / "state" / "board.db")
+        self.board.init()
+        config_path = root / "project.toml"
+        config_path.write_text(default_config("Application", "APP"), encoding="utf-8")
+        ConfigService(self.board).apply(load_config(config_path))
+        self.admin = self.board.create_actor("coordinator", "agent")
+        self.worker = self.board.create_actor("worker", "agent")
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.board))
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/mcp"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+        self.tmp.cleanup()
+
+    def _call(self, token, payload):
+        request = urllib.request.Request(
+            self.url,
+            data=json.dumps(payload).encode(),
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+                "Accept": "application/json, text/event-stream",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=5) as response:
+            return json.load(response)
+
+    def _tool(self, token, name, arguments, request_id=1):
+        response = self._call(token, {
+            "jsonrpc": "2.0", "id": request_id, "method": "tools/call",
+            "params": {"name": name, "arguments": arguments},
+        })
+        result = response["result"]
+        self.assertFalse(result.get("isError"), result)
+        return result["structuredContent"]
+
+    def test_agent_bootstraps_without_discovery_calls(self):
+        # 1. initialize alone must give identity and the board snapshot.
+        initialized = self._call(self.worker["token"], {
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                       "clientInfo": {"name": "e2e", "version": "0"}},
+        })
+        instructions = initialized["result"]["instructions"]
+        self.assertIn("worker", instructions)
+        self.assertIn("APP", instructions)
+        self.assertIn("In Review", instructions)
+
+        # 2. The planner creates work; the worker finds, claims, and finishes it.
+        created = self._tool(self.admin["token"], "create_issue", {
+            "title": "Ship the feature",
+            "description": "Acceptance:\n- [ ] implemented\n- [ ] tested",
+            "labels": ["review_required"],
+        })
+        identifier = created["identifier"]
+
+        issues = self._tool(self.worker["token"], "list_issues", {"label": "review_required"})
+        self.assertEqual([issue["identifier"] for issue in issues], [identifier])
+
+        claimed = self._tool(self.worker["token"], "claim_issue", {
+            "issue": identifier, "expected_revision": created["revision"],
+        })
+        started = self._tool(self.worker["token"], "update_issue", {
+            "issue": identifier, "expected_revision": claimed["revision"], "status": "In Progress",
+        })
+        self._tool(self.worker["token"], "add_comment", {
+            "issue": identifier, "body": "Implemented; needs review per label.",
+        })
+        reviewed = self._tool(self.worker["token"], "update_issue", {
+            "issue": identifier,
+            "expected_revision": self._tool(self.worker["token"], "get_issue", {"issue": identifier})["revision"],
+            "status": "In Review",
+        })
+        self.assertEqual(reviewed["status"], "In Review")
+        self.assertEqual(started["assignee"], "worker")
+
+        # 3. A stale revision is a structured conflict, not a dropped connection.
+        response = self._call(self.worker["token"], {
+            "jsonrpc": "2.0", "id": 9, "method": "tools/call",
+            "params": {"name": "update_issue", "arguments": {
+                "issue": identifier, "expected_revision": 1, "status": "Done",
+            }},
+        })
+        error = response["result"]["structuredContent"]["error"]
+        self.assertEqual(error["code"], "conflict")
+        self.assertTrue(error["retryable"])
 
 
-class BootstrapAgentE2ETest(unittest.TestCase):
-    def test_repository_bootstrap_and_agent_issue_creation(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            repo = Path(tmp) / "product"
-            repo.mkdir()
-            subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-            env = {**os.environ, "PYTHONPATH": str(PROJECT_ROOT)}
-
-            initialized = subprocess.run(
-                [sys.executable, "-m", "local_board.cli", "init"],
-                cwd=repo, env=env, check=True, capture_output=True, text=True,
-            )
-            path = Repository.discover(repo).database_path
-            self.assertIn(str(path), initialized.stdout)
-            self.assertTrue((repo / ".local-board" / "project.toml").exists())
-            self.assertTrue((repo / ".local-board" / "AGENT.md").exists())
-            self.assertIn(".local-board/AGENT.md", (repo / "AGENTS.md").read_text())
-            self.assertTrue((repo / ".agents" / "skills" / "local-board" / "SKILL.md").exists())
-            self.assertIn(".local-board/state/", (repo / ".gitignore").read_text())
-
-            actor_result = subprocess.run(
-                [sys.executable, "-m", "local_board.cli", "actor", "e2e-agent"],
-                cwd=repo, env=env, check=True, capture_output=True, text=True,
-            )
-            token = actor_result.stdout.split("Token (shown once): ", 1)[1].strip()
-            with socket.socket() as sock:
-                sock.bind(("127.0.0.1", 0)); port = sock.getsockname()[1]
-            server = subprocess.Popen(
-                [sys.executable, "-m", "local_board.cli", "serve", "--port", str(port)],
-                cwd=repo, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True,
-            )
-            calls = [
-                {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "whoami", "arguments": {}}},
-                {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "create_issue", "arguments": {"project": "PRODUCT", "title": "First agent task", "type": "task"}}},
-                {"jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": {"name": "claim_issue", "arguments": {"issue": "PRODUCT-1", "expected_revision": 1}}},
-                {"jsonrpc": "2.0", "id": 4, "method": "tools/call", "params": {"name": "add_comment", "arguments": {"issue": "PRODUCT-1", "body": "Started"}}},
-                {"jsonrpc": "2.0", "id": 5, "method": "tools/call", "params": {"name": "get_issue_context", "arguments": {"issue": "PRODUCT-1"}}},
-            ]
-            headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
-            try:
-                for _ in range(50):
-                    try:
-                        with urlopen(f"http://127.0.0.1:{port}/", timeout=.2): break
-                    except Exception: time.sleep(.05)
-                else: self.fail("Local Board server did not start")
-                for call in calls:
-                    request = Request(f"http://127.0.0.1:{port}/mcp", data=json.dumps(call).encode(), headers=headers)
-                    with urlopen(request, timeout=2) as response:
-                        self.assertFalse(json.load(response)["result"].get("isError", False))
-            finally:
-                server.terminate()
-                try: server.wait(timeout=3)
-                except subprocess.TimeoutExpired: server.kill(); server.wait(timeout=3)
-            board = Board(path)
-            self.assertEqual(board.list_projects()[0]["key"], "PRODUCT")
-            self.assertEqual(board.list_issues()[0]["title"], "First agent task")
+if __name__ == "__main__":
+    unittest.main()

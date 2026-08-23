@@ -27,7 +27,6 @@ AGENTS.md                    tracked discovery bridge (created only when absent)
 .local-board/AGENT.md       tracked repository policy
 .local-board/state/         ignored SQLite runtime
 .local-board/backups/       ignored future backup location
-.local-board/attachments/   ignored local artifacts
 .local-board/secrets/       ignored local secrets
 ```
 

@@ -19,7 +19,7 @@ git add .local-board/project.toml .local-board/AGENT.md .agents/skills AGENTS.md
 git commit -m "Configure Local Board"
 ```
 
-Do not commit `.local-board/state`, `secrets`, `attachments`, or `backups`.
+Do not commit `.local-board/state`, `secrets`, or `backups`.
 
 ## Configure and start
 

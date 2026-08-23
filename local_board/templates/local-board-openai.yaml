@@ -1,11 +1,11 @@
 interface:
   display_name: "Local Board"
   short_description: "Coordinate repository work through Local Board MCP"
-  default_prompt: "Use $local-board to discover, claim, update, and complete repository issues through the configured Local Board MCP server."
+  default_prompt: "Use $local-board to discover, claim, comment on, and complete repository issues through the configured Local Board MCP server."
 dependencies:
   tools:
     - type: "mcp"
       value: "local-board"
-      description: "Repository-local planning and issue coordination server"
+      description: "Repository-local issue board and coordination server"
       transport: "streamable_http"
       url: "http://127.0.0.1:8765/mcp"
