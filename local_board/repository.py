@@ -39,13 +39,20 @@ class Repository:
         )
 
     @property
+    def primary_root(self) -> Path:
+        """The primary checkout: linked worktrees share it through git_common_dir."""
+        if self.git_common_dir.name == ".git":
+            return self.git_common_dir.parent
+        return self.root
+
+    @property
     def database_path(self) -> Path:
-        """Runtime state owned by the server started for this checkout."""
-        return self.root / ".local-board" / "state" / "board.db"
+        """One board per repository: every worktree resolves to the primary checkout's state."""
+        return self.primary_root / ".local-board" / "state" / "board.db"
 
     @property
     def config_path(self) -> Path:
-        return self.root / ".local-board" / "project.toml"
+        return self.primary_root / ".local-board" / "project.toml"
 
 
 def resolve_database_path(
