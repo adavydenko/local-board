@@ -320,6 +320,123 @@ class AgentContractTest(unittest.TestCase):
         entries = self.board.activity("issue")
         self.assertEqual(entries[0]["identifier"], created["identifier"])
 
+    # -- list_issues filter resolution --------------------------------------------
+
+    def test_list_issues_resolves_reference_filters(self):
+        milestone = self.call("create_milestone", name="Phase one", key="p1")
+        self.call("create_label", name="Backend", key="backend")
+        parent = self.call("create_issue", title="epic")
+        self.call("create_issue", title="child work item", milestone="p1",
+                  assignee="member-agent", labels=["backend"], parent=parent["identifier"])
+        self.call("create_issue", title="unrelated")
+
+        by_milestone = self.call("list_issues", milestone="p1")
+        self.assertEqual([issue["title"] for issue in by_milestone], ["child work item"])
+        self.assertEqual(by_milestone[0]["milestone_id"], milestone["id"])
+
+        by_assignee = self.call("list_issues", assignee="member-agent")
+        self.assertEqual([issue["title"] for issue in by_assignee], ["child work item"])
+
+        by_parent = self.call("list_issues", parent=parent["identifier"])
+        self.assertEqual([issue["title"] for issue in by_parent], ["child work item"])
+
+        combined = self.call("list_issues", label="backend", query="child")
+        self.assertEqual([issue["title"] for issue in combined], ["child work item"])
+
+    # -- update_issue null clearing ------------------------------------------------
+
+    def test_update_issue_null_clears_references(self):
+        self.call("create_milestone", name="Phase two", key="p2")
+        parent = self.call("create_issue", title="parent")
+        created = self.call("create_issue", title="clearable", milestone="p2",
+                            assignee="member-agent", parent=parent["identifier"])
+        cleared = self.call("update_issue", issue=created["identifier"],
+                            expected_revision=created["revision"],
+                            assignee=None, milestone=None, parent=None,
+                            return_full_issue=True)
+        self.assertIsNone(cleared["assignee_id"])
+        self.assertIsNone(cleared["milestone_id"])
+        self.assertIsNone(cleared["parent_id"])
+
+    # -- correction tools over MCP (admin) -----------------------------------------
+
+    def test_admin_correction_tools_for_milestones_git_links_comments(self):
+        milestone = self.call_as(self.admin["id"], "create_milestone", name="Draft", key="d1")
+        renamed = self.call_as(self.admin["id"], "update_milestone", milestone="d1", name="Final")
+        self.assertEqual(renamed["name"], "Final")
+
+        created = self.call("create_issue", title="linked")
+        self.call("add_git_link", issue=created["identifier"], ref="feature/x")
+        link = self.call("get_issue", issue=created["identifier"])["git_links"][0]
+        updated = self.call_as(self.admin["id"], "update_git_link",
+                               link_id=link["id"], ref="feature/y", kind="pr")
+        self.assertEqual((updated["ref"], updated["kind"]), ("feature/y", "pr"))
+        deleted = self.call_as(self.admin["id"], "delete_git_link", link_id=link["id"])
+        self.assertTrue(deleted["deleted"])
+
+        comment = self.call("add_comment", issue=created["identifier"], body="typo")
+        removed = self.call_as(self.admin["id"], "delete_comment", comment_id=comment["id"])
+        self.assertTrue(removed["deleted"])
+
+        gone = self.call_as(self.admin["id"], "delete_milestone", milestone="d1")
+        self.assertTrue(gone["deleted"])
+
+
+class ValidatorFuzzTest(unittest.TestCase):
+    """The hand-rolled schema validator must never let junk arguments escape as a raw
+    exception: every response is a structured result or a structured error."""
+
+    SEED = 20260824
+    ROUNDS_PER_TOOL = 40
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.board = Board(Path(self.tmp.name) / "board.db")
+        self.board.init()
+        self.board.configure_board("APP", "App")
+        self.admin = self.board.create_actor("fuzz-admin")
+        self.board.create_issue(self.admin["id"], "seed issue")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _junk_value(self, rng):
+        choices = [
+            None, True, False, 0, -1, 99999, 1.5, "", "APP-1", "APP-999", "id", "bogus",
+            "1", [], [1, "x"], ["APP-1"], {"nested": 1}, "In Progress", "no-such-status",
+            rng.choice(["a", "z"]) * rng.randint(1, 30),
+        ]
+        return rng.choice(choices)
+
+    def test_random_arguments_always_yield_structured_responses(self):
+        import random
+
+        from local_board.mcp import schemas
+
+        rng = random.Random(self.SEED)
+        field_pool = ["issue", "id", "expected_revision", "status", "assignee", "milestone",
+                      "labels", "body", "comment_id", "link_id", "label", "name", "kind",
+                      "role", "actor", "depends_on", "ref", "url", "title", "bogus", "query"]
+        for entry in schemas("admin"):
+            for _ in range(self.ROUNDS_PER_TOOL):
+                arguments = {
+                    rng.choice(field_pool): self._junk_value(rng)
+                    for _ in range(rng.randint(0, 4))
+                }
+                response = handle(self.board, self.admin["id"], {
+                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": {"name": entry["name"], "arguments": arguments},
+                })
+                result = response["result"]
+                if result.get("isError"):
+                    error = result["structuredContent"]["error"]
+                    self.assertIn(error["code"],
+                                  {"invalid_request", "not_found", "conflict", "blocked",
+                                   "unauthorized", "internal"},
+                                  (entry["name"], arguments, error))
+                else:
+                    self.assertIn("structuredContent", result)
+
 
 if __name__ == "__main__":
     unittest.main()

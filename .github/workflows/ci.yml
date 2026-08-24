@@ -36,13 +36,21 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install package
-        run: python -m pip install .
+        run: python -m pip install . coverage
 
       # Browser automation is not part of this unittest tree. This discovery
       # command runs every current unit, integration, HTTP/e2e, concurrency,
       # and root test and automatically includes future non-browser tests.
-      - name: Run non-browser test suite
-        run: python -m unittest discover -s tests -v
+      # coverage is a CI-only dev tool; the package itself stays dependency-free.
+      - name: Run non-browser test suite under coverage
+        run: python -m coverage run --branch --source=local_board -m unittest discover -s tests -v
+
+      # Ratchet: raise the threshold as gaps close. cli.py is exercised through
+      # subprocess tests, which this in-process measurement undercounts.
+      - name: Enforce coverage floor
+        run: |
+          python -m coverage report -m --skip-empty
+          python -m coverage report --fail-under=75
 
       - name: Compile Python sources
         run: python -m compileall -q local_board tests
