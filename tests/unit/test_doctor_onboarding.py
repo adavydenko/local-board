@@ -165,3 +165,28 @@ class OnboardingTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DoctorStaleServerTest(unittest.TestCase):
+    def test_stale_server_json_yields_warning(self):
+        import json as jsonlib
+        import tempfile
+        from pathlib import Path
+
+        from local_board.config import ConfigService, default_config, load_config
+        from local_board.db import Board
+        from local_board.doctor import run_doctor
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            board = Board(root / "state" / "board.db")
+            board.init()
+            config_path = root / "project.toml"
+            config_path.write_text(default_config("App", "APP"), encoding="utf-8")
+            ConfigService(board).apply(load_config(config_path))
+            stale = {"url": "http://127.0.0.1:1", "pid": 2 ** 22 + 12345, "started_at": "x"}
+            (board.path.parent / "server.json").write_text(jsonlib.dumps(stale), encoding="utf-8")
+            result = run_doctor(board, config_path, online=False)
+            server_check = next(item for item in result["checks"] if item["name"] == "server")
+            self.assertEqual(server_check["status"], "warn")
+            self.assertIn("uncleanly", server_check["message"])

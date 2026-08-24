@@ -187,8 +187,8 @@ class WebUiTest(unittest.TestCase):
             body={"ref": "feature/x"},
         )
         self.assertEqual(status, 201)
-        self.assertEqual(with_link["git_links"][0]["ref"], "feature/x")
-        self.assertEqual(with_link["git_links"][0]["kind"], "branch")
+        self.assertEqual(with_link["ref"], "feature/x")
+        self.assertEqual(with_link["kind"], "branch")
 
     def test_patch_comment_by_author_succeeds(self):
         _, issue = self.request("POST", "/api/issues", body={"title": "Commented"})
@@ -236,7 +236,7 @@ class WebUiTest(unittest.TestCase):
         _, with_link = self.request(
             "POST", f"/api/issues/{issue['identifier']}/git-links", body={"ref": "feature/a"}
         )
-        link_id = with_link["git_links"][0]["id"]
+        link_id = with_link["id"]
         status, updated_link = self.request(
             "PATCH", f"/api/git-links/{link_id}", body={"ref": "feature/b"}
         )
@@ -265,7 +265,7 @@ class WebUiTest(unittest.TestCase):
         _, with_link = self.request(
             "POST", f"/api/issues/{issue['identifier']}/git-links", body={"ref": "feature/z"}
         )
-        link_id = with_link["git_links"][0]["id"]
+        link_id = with_link["id"]
         status, deleted_link = self.request("DELETE", f"/api/git-links/{link_id}")
         self.assertEqual(status, 200)
         self.assertTrue(deleted_link["deleted"])

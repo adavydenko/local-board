@@ -16,7 +16,7 @@ The conceptual client configuration in `examples/mcp-http.example.json` illustra
 
 ### CLI wrappers
 
-When driving MCP through a shell wrapper, pass JSON bodies via a temp file (`--args "$(cat args.json)"` or equivalent) rather than inline — Markdown comments with backticks and quotes do not survive shell quoting inline. `GET /health` is an unauthenticated liveness probe. `.local-board/state/server.json` is the running server's address/PID discovery file.
+When driving MCP through a shell wrapper, pass JSON bodies via a temp file (`--args "$(cat args.json)"` or equivalent) rather than inline — Markdown comments with backticks and quotes do not survive shell quoting inline. `GET /health` is an unauthenticated liveness probe. `.local-board/state/server.json` is the running server's address/PID discovery file. A stale `server.json` — file present, PID dead — means the server died uncleanly; check `.local-board/state/server-crash.log`.
 
 ## Coordinator bootstrap
 

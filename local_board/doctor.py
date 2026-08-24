@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -83,6 +84,23 @@ def run_doctor(
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         foreign_keys = [tuple(row) for row in db.execute("PRAGMA foreign_key_check")]
     checks.append(_check("database_integrity", "pass" if integrity == "ok" else "fail", integrity))
+
+    server_file = board.path.parent / "server.json"
+    if server_file.exists():
+        # A clean shutdown removes this file, so a dead PID here means the server
+        # died uncleanly: point at the crash log instead of leaving a silent mystery.
+        try:
+            pid = int(json.loads(server_file.read_text(encoding="utf-8")).get("pid", 0))
+            os.kill(pid, 0)
+            checks.append(_check("server", "pass", f"running (pid {pid})"))
+        except (ProcessLookupError, ValueError):
+            checks.append(_check(
+                "server", "warn",
+                f"stale {server_file.name}: recorded server is not running; it likely died "
+                "uncleanly — see server-crash.log and remove the stale file",
+            ))
+        except PermissionError:
+            checks.append(_check("server", "pass", "running (pid owned by another user)"))
     checks.append(_check(
         "foreign_keys",
         "pass" if not foreign_keys else "fail",

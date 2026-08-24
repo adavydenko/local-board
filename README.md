@@ -10,7 +10,7 @@ The rules that used to live in the server — required reviewers, branch pattern
 
 ## Is Local Board a fit?
 
-Local Board is most useful when multiple agents, or humans and agents, work concurrently on the same local repository and need atomic claims, a shared source of truth for what's in flight, and an audit trail, without the ceremony of a hosted tracker. It can replace an ad-hoc `TODO.md` for that local coordination loop while keeping board configuration and agent instructions in Git.
+Local Board is most useful when multiple agents, or humans and agents, work concurrently on the same local repository and need atomic claims, a shared coordination record for what's in flight, and an audit trail, without the ceremony of a hosted tracker. It can replace an ad-hoc `TODO.md` for that local coordination loop while keeping board configuration and agent instructions in Git. The board is authoritative for coordination — claims, decisions, task statements and outcomes; git remains authoritative for code state, and since board status is updated by agents, it can lag behind what's actually committed.
 
 It is probably unnecessary for a single short-lived agent task, and it is not a replacement for a hosted tracker used by a distributed team. Issues, comments, identities, and activity live in the ignored SQLite database: Git clones receive the board configuration and instructions, **not** the operational board. Agents in other worktrees must connect to the one server that owns the common Git repository's database. Agents on other machines need a deliberately operated shared host (with appropriate network security) or a separate board; Local Board does not synchronize databases between machines.
 

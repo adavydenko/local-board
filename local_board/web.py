@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import faulthandler
+
 import json
 import os
 import sys
@@ -295,20 +297,25 @@ def make_handler(board: Board):
 
 
 def serve(board: Board, host: str = "127.0.0.1", port: int = 8765) -> None:
-    print(f"Local Board: http://{host}:{port}")
     server = ThreadingHTTPServer((host, port), make_handler(board))
     actual_port = server.server_port
-    discovery_path = board.path.parent / "server.json"
     board.path.parent.mkdir(parents=True, exist_ok=True)
+    # Fatal signals (segfault, unraisable deadlock dumps) land here, so an unclean
+    # death leaves a diagnosable trace instead of a silent Connection refused.
+    crash_log = (board.path.parent / "server-crash.log").open("a")
+    faulthandler.enable(file=crash_log)
+    discovery_path = board.path.parent / "server.json"
     discovery = {
         "url": f"http://{host}:{actual_port}",
         "pid": os.getpid(),
         "started_at": datetime.now(UTC).isoformat(),
     }
     discovery_path.write_text(json.dumps(discovery), encoding="utf-8")
+    print(f"Local Board: started at http://{host}:{actual_port} (pid {os.getpid()})", file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("Local Board: stopped")
+        print("Local Board: stopped (keyboard interrupt)", file=sys.stderr)
     finally:
         discovery_path.unlink(missing_ok=True)
+        crash_log.close()

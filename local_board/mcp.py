@@ -92,14 +92,22 @@ TOOLS_READ = [
             "query": {"type": "string", "description": "Substring match on title and description."},
         },
     ),
-    tool("get_issue", "Get one issue with labels, comments, dependencies, children, and git links.",
-         {"issue": ISSUE_REF}, ["issue"]),
+    tool("get_issue",
+         "Get one issue with labels, comments, dependencies, children, and git links. "
+         "comments_total is always present, so a trimmed thread is visible.",
+         {"issue": ISSUE_REF,
+          "comments": {"description": "'all' (default), 'none', or the last N comments.",
+                       "oneOf": [{"type": "string", "enum": ["all", "none"]},
+                                 {"type": "integer", "minimum": 1}],
+                       "default": "all"}},
+         ["issue"]),
     tool(
         "list_activity",
         "Read the append-only activity log.",
         {
             "entity_type": {"type": "string", "description": "e.g. issue, milestone, label, actor."},
             "entity_id": {"type": "integer", "description": "Internal id of the entity."},
+            "issue": ISSUE_REF,
             "limit": {"type": "integer", "minimum": 1, "maximum": 500, "default": 100},
         },
     ),
@@ -167,9 +175,12 @@ TOOLS_WRITE = [
         ["issue", "expected_revision"],
     ),
     tool("add_comment",
-         "Add a Markdown comment to an issue. Does not change the issue revision; the response "
-         "carries the current issue_revision.",
-         {"issue": ISSUE_REF, "body": {"type": "string", "minLength": 1}}, ["issue", "body"]),
+         "Add a Markdown comment to an issue. Does not change the issue revision. Returns the "
+         "comment id and current issue_revision; the body is echoed only with return_full_comment.",
+         {"issue": ISSUE_REF, "body": {"type": "string", "minLength": 1},
+          "return_full_comment": {"type": "boolean", "default": False,
+                                  "description": "Echo the stored comment body in the response."}},
+         ["issue", "body"]),
     tool("update_comment",
          "Edit a comment. Only its author or an admin may edit it. Does not change the issue revision.",
          {"comment_id": {"type": "integer", "minimum": 1}, "body": {"type": "string", "minLength": 1}},
@@ -184,15 +195,18 @@ TOOLS_WRITE = [
          ["issue", "depends_on"]),
     tool(
         "add_git_link",
-        "Associate a branch, commit, PR, or MR with an issue. Does not change the issue revision.",
+        "Associate git refs with an issue. Does not change the issue revision. Returns the created "
+        "link(s) with their ids. Pass either ref or refs (a batch, one transaction).",
         {
             "issue": ISSUE_REF,
             "ref": {"type": "string", "minLength": 1, "description": "Branch name, SHA, or PR/MR number."},
+            "refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1,
+                     "description": "Several refs of the same kind at once."},
             "kind": {"type": "string", "enum": list(GIT_LINK_KINDS), "default": "branch"},
             "url": {"type": "string"},
             "return_full_issue": RETURN_FULL_ISSUE,
         },
-        ["issue", "ref"],
+        ["issue"],
     ),
     tool(
         "create_milestone",
@@ -414,15 +428,23 @@ def _list_issues(board: Board, actor: int, args: dict[str, Any]) -> Any:
 
 
 def _get_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
-    return board.get_issue(board.resolve_issue(args["issue"]))
+    window = args.get("comments", "all")
+    if window == "all":
+        limit = None
+    elif window == "none":
+        limit = 0
+    else:
+        limit = int(window)
+    return board.get_issue(board.resolve_issue(args["issue"]), comments_limit=limit)
 
 
 def _list_activity(board: Board, actor: int, args: dict[str, Any]) -> Any:
-    return board.activity(
-        entity_type=args.get("entity_type"),
-        entity_id=args.get("entity_id"),
-        limit=args.get("limit", 100),
-    )
+    entity_type = args.get("entity_type")
+    entity_id = args.get("entity_id")
+    if "issue" in args:
+        entity_type = "issue"
+        entity_id = board.resolve_issue(args["issue"])
+    return board.activity(entity_type=entity_type, entity_id=entity_id, limit=args.get("limit", 100))
 
 
 def _create_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
@@ -447,7 +469,10 @@ def _confirmation(issue: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]
     if args.get("return_full_issue"):
         return issue
     keys = ("identifier", "revision", "status", "category", "blocked", "assignee", "claim_expires_at")
-    return {key: issue.get(key) for key in keys}
+    result = {key: issue.get(key) for key in keys}
+    if "lease_revoked_from" in issue:
+        result["lease_revoked_from"] = issue["lease_revoked_from"]
+    return result
 
 
 def _update_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
@@ -487,8 +512,10 @@ def _release_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
 def _add_comment(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
     comment = board.add_comment(actor, issue_id, args["body"])
-    issue_revision = board.get_issue(issue_id)["revision"]
-    return {**comment, "issue_revision": issue_revision}
+    if args.get("return_full_comment"):
+        return comment
+    keys = ("id", "issue_id", "issue_revision", "created_at")
+    return {key: comment[key] for key in keys}
 
 
 def _update_comment(board: Board, actor: int, args: dict[str, Any]) -> Any:
@@ -513,8 +540,17 @@ def _remove_dependency(board: Board, actor: int, args: dict[str, Any]) -> Any:
 
 def _add_git_link(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
-    issue = board.add_git_link(actor, issue_id, args["ref"], args.get("kind", "branch"), args.get("url"))
-    return _confirmation(issue, args)
+    single = args.get("ref")
+    batch = args.get("refs")
+    if bool(single) == bool(batch):
+        raise ValueError("provide exactly one of 'ref' or 'refs'")
+    links = board.add_git_links(actor, issue_id, batch or [single],
+                                args.get("kind", "branch"), args.get("url"))
+    if args.get("return_full_issue"):
+        return board.get_issue(issue_id)
+    if single:
+        return links[0]
+    return {"issue": links[0]["issue"], "links": links}
 
 
 def _update_git_link(board: Board, actor: int, args: dict[str, Any]) -> Any:

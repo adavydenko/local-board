@@ -28,7 +28,7 @@ Leases default to 30 minutes. Renew by calling `claim_issue` again with the late
 
 ## Verification evidence
 
-Paste the verification command and its output as a fenced block in a comment, and `add_git_link` the commit that contains any verification script. The board stores task statements and outcomes, not artifacts.
+Paste the verification command and its output as a fenced block in a comment, and `add_git_link` the commit that contains any verification script. The board stores task statements and outcomes, not artifacts. Any script you cite in a comment must be committed to the repository first; an uncommitted verification run is an unreproducible screenshot for the next agent. Land the artifact in git, land the outcome on the board.
 
 ## Mutation responses
 
@@ -36,7 +36,7 @@ Mutations return a compact confirmation — `{identifier, revision, status, cate
 
 ## Review (adapt to your project)
 
-If the issue carries the `review_required` label, move it to "In Review" instead of a Done-category status when you finish, and comment what a reviewer should check. This is a convention, not a server rule — follow your project's actual practice if it differs.
+If the issue carries the `review_required` label, move it to "In Review" instead of a Done-category status when you finish, and comment what a reviewer should check. This is a convention, not a server rule — follow your project's actual practice if it differs. When you finish a review, remove the `review_required` label in the same `update_issue` call that changes the status (optionally add a `reviewed` label) — otherwise the board cannot distinguish "needs review" from "reviewed".
 
 ## Conflicts and errors
 

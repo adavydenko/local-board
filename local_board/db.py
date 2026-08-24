@@ -695,10 +695,13 @@ class Board:
         "WHERE d.issue_id=i.id AND bs.category NOT IN ('completed','canceled'))"
     )
 
-    def get_issue(self, issue_id: int, db: sqlite3.Connection | None = None) -> dict[str, Any]:
+    def get_issue(self, issue_id: int, db: sqlite3.Connection | None = None, *,
+                  comments_limit: int | None = None) -> dict[str, Any]:
+        """comments_limit: None = all comments, 0 = none, N > 0 = the last N.
+        comments_total is always present, so a trimmed thread is visible as trimmed."""
         if db is None:
             with self.connect() as conn:
-                return self.get_issue(issue_id, conn)
+                return self.get_issue(issue_id, conn, comments_limit=comments_limit)
         board = self.get_board(db)
         row = db.execute(
             f"SELECT i.*, s.category, {self._BLOCKED_SQL} AS blocked, a.name AS assignee "
@@ -719,14 +722,25 @@ class Board:
                 (issue_id,),
             )
         ]
-        result["comments"] = [
-            dict(item)
-            for item in db.execute(
+        result["comments_total"] = int(
+            db.execute("SELECT count(*) FROM comments WHERE issue_id=?", (issue_id,)).fetchone()[0]
+        )
+        if comments_limit == 0:
+            result["comments"] = []
+        else:
+            comments_sql = (
                 "SELECT c.id,c.author_id,a.name AS author,c.body,c.created_at,c.updated_at "
-                "FROM comments c JOIN actors a ON a.id=c.author_id WHERE c.issue_id=? ORDER BY c.id",
-                (issue_id,),
+                "FROM comments c JOIN actors a ON a.id=c.author_id WHERE c.issue_id=?"
             )
-        ]
+            if comments_limit and comments_limit > 0:
+                window = db.execute(
+                    comments_sql + " ORDER BY c.id DESC LIMIT ?", (issue_id, comments_limit)
+                ).fetchall()
+                result["comments"] = [dict(item) for item in reversed(window)]
+            else:
+                result["comments"] = [
+                    dict(item) for item in db.execute(comments_sql + " ORDER BY c.id", (issue_id,))
+                ]
         result["blocked_by"] = [
             {**dict(item), "identifier": f"{board['prefix']}-{item['number']}",
              "completed": item["category"] in DONE_CATEGORIES}
@@ -761,9 +775,11 @@ class Board:
                     assignee_id: int | None = None, label: str | int | None = None,
                     parent_id: int | None = None, query: str | None = None) -> list[dict[str, Any]]:
         sql = (
-            "SELECT i.id,i.number,i.title,i.status,s.category,i.priority,i.assignee_id,i.milestone_id,"
+            "SELECT i.id,i.number,i.title,i.status,s.category,i.priority,i.assignee_id,"
+            "actor.name AS assignee,i.milestone_id,"
             f"i.parent_id,i.position,i.revision,i.claimed_at,i.claim_expires_at,{self._BLOCKED_SQL} AS blocked "
-            "FROM issues i JOIN statuses s ON s.name=i.status WHERE 1=1"
+            "FROM issues i JOIN statuses s ON s.name=i.status "
+            "LEFT JOIN actors actor ON actor.id=i.assignee_id WHERE 1=1"
         )
         args: list[Any] = []
         if status:
@@ -794,7 +810,18 @@ class Board:
                 item = dict(row)
                 item["blocked"] = bool(item["blocked"])
                 item["identifier"] = f"{board['prefix']}-{item['number']}"
+                item["labels"] = []
                 rows.append(item)
+            if rows:
+                by_id = {item["id"]: item for item in rows}
+                marks = ",".join("?" for _ in by_id)
+                label_rows = db.execute(
+                    "SELECT il.issue_id, COALESCE(l.key, l.name) AS label FROM issue_labels il "
+                    f"JOIN labels l ON l.id=il.label_id WHERE il.issue_id IN ({marks}) ORDER BY label",
+                    tuple(by_id),
+                )
+                for label_row in label_rows:
+                    by_id[label_row["issue_id"]]["labels"].append(label_row["label"])
             return rows
 
     def update_issue(self, actor: int, issue_id: int, **fields: Any) -> dict[str, Any]:
@@ -833,6 +860,12 @@ class Board:
             if "assignee_id" in changes:
                 changes["claimed_at"] = None
                 changes["claim_expires_at"] = None
+            revoked_from = None
+            clears_lease = "claimed_at" in changes and changes["claimed_at"] is None
+            if (clears_lease and current["assignee_id"] not in (None, actor)
+                    and current["claim_expires_at"] and current["claim_expires_at"] > now()):
+                revoked_from = current["assignee"]
+                data["lease_revoked_from"] = revoked_from
             expected_revision = current["revision"] if expected_revision is None else expected_revision
             if changes:
                 changes["updated_at"] = now()
@@ -843,14 +876,23 @@ class Board:
                     [*changes.values(), issue_id, expected_revision],
                 )
                 if not cur.rowcount:
-                    raise ConflictError(f"issue revision conflict: expected {expected_revision}")
+                    raise ConflictError(
+                        f"issue revision conflict: expected {expected_revision}, "
+                        f"current {current['revision']}"
+                    )
             elif current["revision"] != expected_revision:
-                raise ConflictError(f"issue revision conflict: expected {expected_revision}")
+                raise ConflictError(
+                    f"issue revision conflict: expected {expected_revision}, "
+                    f"current {current['revision']}"
+                )
             if labels is not None:
                 self._set_labels(db, issue_id, labels)
                 data["fields"] = sorted({*data["fields"], "labels"})
             self._activity(db, actor, "issue", issue_id, "updated", data)
-            return self.get_issue(issue_id, db)
+            result = self.get_issue(issue_id, db)
+            if revoked_from:
+                result["lease_revoked_from"] = revoked_from
+            return result
 
     def claim_issue(self, actor: int, issue_id: int, expected_revision: int,
                     lease_seconds: int = 1800, status: str | None = None) -> dict[str, Any]:
@@ -868,7 +910,20 @@ class Board:
                  issue_id, expected_revision, actor, stamp.isoformat()),
             )
             if not cur.rowcount:
-                raise ConflictError(f"issue claim conflict: expected revision {expected_revision}")
+                row = db.execute(
+                    "SELECT i.revision, i.claim_expires_at, a.name AS holder FROM issues i "
+                    "LEFT JOIN actors a ON a.id=i.assignee_id WHERE i.id=?",
+                    (issue_id,),
+                ).fetchone()
+                if not row:
+                    raise KeyError("issue not found")
+                message = (
+                    f"issue claim conflict: expected revision {expected_revision}, "
+                    f"current {row['revision']}"
+                )
+                if row["holder"] and row["claim_expires_at"] and row["claim_expires_at"] > stamp.isoformat():
+                    message += f"; held by {row['holder']} until {row['claim_expires_at']}"
+                raise ConflictError(message)
             data: dict[str, Any] = {"lease_seconds": lease_seconds}
             if status is not None:
                 current = db.execute("SELECT status FROM issues WHERE id=?", (issue_id,)).fetchone()[0]
@@ -880,9 +935,10 @@ class Board:
                         if target["category"] in DONE_CATEGORIES
                         else ""
                     )
+                    # The claim above already advanced the revision; claim-with-status is one
+                    # logical mutation, so the status write must not advance it again.
                     db.execute(
-                        f"UPDATE issues SET status=?,position=?,revision=revision+1,updated_at=?{lease_reset} "
-                        "WHERE id=?",
+                        f"UPDATE issues SET status=?,position=?,updated_at=?{lease_reset} WHERE id=?",
                         (status, position, stamp.isoformat(), issue_id),
                     )
                     data["status"] = {"from": current, "to": status}
@@ -913,7 +969,9 @@ class Board:
                 (issue_id, actor, body, stamp, stamp),
             )
             self._activity(db, actor, "issue", issue_id, "comment_added", {"comment_id": cur.lastrowid})
-            return dict(db.execute("SELECT * FROM comments WHERE id=?", (cur.lastrowid,)).fetchone())
+            revision = db.execute("SELECT revision FROM issues WHERE id=?", (issue_id,)).fetchone()[0]
+            comment = dict(db.execute("SELECT * FROM comments WHERE id=?", (cur.lastrowid,)).fetchone())
+            return {**comment, "issue_revision": int(revision)}
 
     def _comment_row(self, db: sqlite3.Connection, actor: int, comment_id: int) -> sqlite3.Row:
         row = db.execute("SELECT * FROM comments WHERE id=?", (comment_id,)).fetchone()
@@ -972,19 +1030,38 @@ class Board:
             self._activity(db, actor, "issue", issue_id, "dependency_removed", {"depends_on_id": depends_on_id})
             return self.get_issue(issue_id, db)
 
-    def add_git_link(self, actor: int, issue_id: int, ref: str, kind: str = "branch",
-                     url: str | None = None) -> dict[str, Any]:
+    def add_git_links(self, actor: int, issue_id: int, refs: list[str], kind: str = "branch",
+                      url: str | None = None) -> list[dict[str, Any]]:
+        """Record one or more refs in a single transaction and return the link rows —
+        the confirmation an agent needs, including ids for later update or delete."""
         if kind not in GIT_LINK_KINDS:
             raise ValueError("invalid Git link kind")
+        if not refs:
+            raise ValueError("at least one ref is required")
         with self.transaction() as db:
-            if not db.execute("SELECT 1 FROM issues WHERE id=?", (issue_id,)).fetchone():
+            board = self.get_board(db)
+            issue = db.execute("SELECT number FROM issues WHERE id=?", (issue_id,)).fetchone()
+            if not issue:
                 raise KeyError("issue not found")
-            db.execute(
-                "INSERT OR IGNORE INTO git_links(issue_id,kind,ref,url,created_at) VALUES(?,?,?,?,?)",
-                (issue_id, kind, ref, url, now()),
-            )
-            self._activity(db, actor, "issue", issue_id, "git_link_added", {"kind": kind, "ref": ref})
-            return self.get_issue(issue_id, db)
+            identifier = f"{board['prefix']}-{issue['number']}"
+            links = []
+            for ref in refs:
+                db.execute(
+                    "INSERT OR IGNORE INTO git_links(issue_id,kind,ref,url,created_at) VALUES(?,?,?,?,?)",
+                    (issue_id, kind, ref, url, now()),
+                )
+                row = db.execute(
+                    "SELECT * FROM git_links WHERE issue_id=? AND kind=? AND ref=?",
+                    (issue_id, kind, ref),
+                ).fetchone()
+                links.append({**dict(row), "issue": identifier})
+            self._activity(db, actor, "issue", issue_id, "git_link_added",
+                           {"kind": kind, "refs": list(refs)})
+            return links
+
+    def add_git_link(self, actor: int, issue_id: int, ref: str, kind: str = "branch",
+                     url: str | None = None) -> dict[str, Any]:
+        return self.add_git_links(actor, issue_id, [ref], kind, url)[0]
 
     def update_git_link(self, actor: int, link_id: int, **changes: Any) -> dict[str, Any]:
         allowed = {field: value for field, value in changes.items() if field in {"kind", "ref", "url"}}

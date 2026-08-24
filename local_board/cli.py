@@ -151,6 +151,10 @@ def _run_init(args: argparse.Namespace, config_path: Path) -> None:
     board.init()
     result = ConfigService(board).apply(load_config(config_path))
     print(f"Initialized {board.path}; applied {len(result['actions'])} configuration action(s)")
+    print(
+        "Commit the tracked files: "
+        "git add .local-board/project.toml .local-board/AGENT.md .agents AGENTS.md .gitignore"
+    )
 
 
 def _run_actor(args: argparse.Namespace) -> None:

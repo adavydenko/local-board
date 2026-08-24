@@ -117,7 +117,8 @@ class AgentContractTest(unittest.TestCase):
         )
         self.assertEqual(started["status"], "In Progress")
 
-        comment = self.call("add_comment", issue="APP-1", body="Working on it")
+        comment = self.call("add_comment", issue="APP-1", body="Working on it",
+                            return_full_comment=True)
         self.assertEqual(comment["body"], "Working on it")
 
         done = self.call(
@@ -440,3 +441,126 @@ class ValidatorFuzzTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Experiment5FixesTest(unittest.TestCase):
+    """Regressions for the second experiment report (compact comments, link
+    confirmations, comment windows, list summaries, conflict messages, leases)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.board = Board(Path(self.tmp.name) / "board.db")
+        self.board.init()
+        self.board.configure_board("APP", "App")
+        self.worker = self.board.create_actor("worker")
+        self.reviewer = self.board.create_actor("reviewer")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def call(self, actor, tool_name, **arguments):
+        return call_tool(self.board, actor["id"], tool_name, arguments)
+
+    def test_add_comment_is_compact_by_default(self):
+        created = self.call(self.worker, "create_issue", title="talkative")
+        compact = self.call(self.worker, "add_comment", issue="APP-1", body="a long body " * 50)
+        self.assertEqual(set(compact), {"id", "issue_id", "issue_revision", "created_at"})
+        self.assertEqual(compact["issue_revision"], created["revision"])
+        full = self.call(self.worker, "add_comment", issue="APP-1", body="short",
+                         return_full_comment=True)
+        self.assertEqual(full["body"], "short")
+
+    def test_add_git_link_returns_the_created_link(self):
+        self.call(self.worker, "create_issue", title="linked")
+        link = self.call(self.worker, "add_git_link", issue="APP-1", ref="feature/x")
+        self.assertEqual((link["kind"], link["ref"], link["issue"]), ("branch", "feature/x", "APP-1"))
+        self.assertIn("id", link)
+        duplicate = self.call(self.worker, "add_git_link", issue="APP-1", ref="feature/x")
+        self.assertEqual(duplicate["id"], link["id"])
+
+    def test_add_git_link_batch_refs(self):
+        self.call(self.worker, "create_issue", title="batched")
+        result = self.call(self.worker, "add_git_link", issue="APP-1",
+                           refs=["abc123", "def456", "abc123"], kind="commit")
+        self.assertEqual(result["issue"], "APP-1")
+        self.assertEqual([link["ref"] for link in result["links"]], ["abc123", "def456", "abc123"])
+        self.assertEqual(result["links"][0]["id"], result["links"][2]["id"])
+        with self.assertRaises(ValueError):
+            self.call(self.worker, "add_git_link", issue="APP-1", ref="x", refs=["y"])
+        with self.assertRaises(ValueError):
+            self.call(self.worker, "add_git_link", issue="APP-1")
+
+    def test_get_issue_comment_window(self):
+        self.call(self.worker, "create_issue", title="threaded")
+        for index in range(4):
+            self.call(self.worker, "add_comment", issue="APP-1", body=f"comment {index}")
+        everything = self.call(self.worker, "get_issue", issue="APP-1")
+        self.assertEqual(len(everything["comments"]), 4)
+        self.assertEqual(everything["comments_total"], 4)
+        none = self.call(self.worker, "get_issue", issue="APP-1", comments="none")
+        self.assertEqual(none["comments"], [])
+        self.assertEqual(none["comments_total"], 4)
+        last = self.call(self.worker, "get_issue", issue="APP-1", comments=2)
+        self.assertEqual([item["body"] for item in last["comments"]], ["comment 2", "comment 3"])
+
+    def test_list_issues_carries_labels_and_assignee_name(self):
+        self.call(self.worker, "create_label", name="Review required", key="review_required")
+        self.call(self.worker, "create_issue", title="owned",
+                  assignee="worker", labels=["review_required"])
+        summary = self.call(self.worker, "list_issues")[0]
+        self.assertEqual(summary["assignee"], "worker")
+        self.assertEqual(summary["labels"], ["review_required"])
+
+    def test_conflict_message_names_current_revision(self):
+        created = self.call(self.worker, "create_issue", title="conflicted")
+        self.call(self.worker, "update_issue", issue="APP-1",
+                  expected_revision=created["revision"], title="second")
+        with self.assertRaises(Exception) as caught:
+            self.call(self.worker, "update_issue", issue="APP-1",
+                      expected_revision=99, title="stale")
+        self.assertIn("expected 99, current 2", str(caught.exception))
+
+    def test_claim_conflict_names_the_holder(self):
+        created = self.call(self.worker, "create_issue", title="held")
+        claimed = self.call(self.worker, "claim_issue", issue="APP-1",
+                            expected_revision=created["revision"])
+        with self.assertRaises(Exception) as caught:
+            self.call(self.reviewer, "claim_issue", issue="APP-1",
+                      expected_revision=claimed["revision"])
+        message = str(caught.exception)
+        self.assertIn("held by worker", message)
+        self.assertIn(f"current {claimed['revision']}", message)
+
+    def test_claim_with_status_advances_revision_exactly_once(self):
+        created = self.call(self.worker, "create_issue", title="single step")
+        claimed = self.call(self.worker, "claim_issue", issue="APP-1",
+                            expected_revision=created["revision"], status="In Progress")
+        self.assertEqual(claimed["revision"], created["revision"] + 1)
+        self.assertEqual(claimed["status"], "In Progress")
+
+    def test_revoking_someone_elses_live_lease_is_reported(self):
+        created = self.call(self.worker, "create_issue", title="reviewed work")
+        claimed = self.call(self.worker, "claim_issue", issue="APP-1",
+                            expected_revision=created["revision"], status="In Progress")
+        closed = self.call(self.reviewer, "update_issue", issue="APP-1",
+                           expected_revision=claimed["revision"], status="Done")
+        self.assertEqual(closed["lease_revoked_from"], "worker")
+        self.assertEqual(closed["assignee"], "worker")
+        entries = self.board.activity("issue", 1)
+        self.assertEqual(entries[0]["data"].get("lease_revoked_from"), "worker")
+
+    def test_closing_your_own_claim_reports_no_revocation(self):
+        created = self.call(self.worker, "create_issue", title="own work")
+        claimed = self.call(self.worker, "claim_issue", issue="APP-1",
+                            expected_revision=created["revision"], status="In Progress")
+        closed = self.call(self.worker, "update_issue", issue="APP-1",
+                           expected_revision=claimed["revision"], status="Done")
+        self.assertNotIn("lease_revoked_from", closed)
+
+    def test_list_activity_accepts_issue_identifier(self):
+        self.call(self.worker, "create_issue", title="first")
+        self.call(self.worker, "create_issue", title="second")
+        self.call(self.worker, "add_comment", issue="APP-2", body="note")
+        entries = self.call(self.worker, "list_activity", issue="APP-2")
+        self.assertTrue(entries)
+        self.assertTrue(all(entry["identifier"] == "APP-2" for entry in entries))
