@@ -37,7 +37,7 @@ Browser ─────── HTTP API ──────┼── Local Board s
                                └── Web UI
 ```
 
-Each command opens a short SQLite transaction. WAL mode, a busy timeout, foreign keys, and uniqueness constraints provide the storage foundation for multiple local agent processes. Tokens are generated from cryptographic randomness and stored only as SHA-256 digests. The plaintext token is shown once.
+Each command opens a short SQLite transaction. Agents and sub-agents always go through the server's MCP endpoint — the server arbitrates their concurrency with claims and revisions. WAL mode, a busy timeout, foreign keys, and uniqueness constraints additionally keep the database safe when an operator CLI command runs alongside the server. Tokens are generated from cryptographic randomness and stored only as SHA-256 digests. The plaintext token is shown once.
 
 The single Local Board server owns `.local-board/state/board.db` in the repository by default. The runtime directory is ignored by Git; `.local-board/project.toml` and agent instructions remain trackable. `--db` and `LOCAL_BOARD_DB` override the database location. Agents never open SQLite directly: every worktree connects to the same server URL.
 
