@@ -23,7 +23,7 @@ One board per repository, with:
 - Markdown descriptions and comments — checklists are `- [ ]` / `- [x]` lines in the description, not a separate feature;
 - priorities, labels, assignees, and milestones (phases, not releases);
 - sub-issues via `parent_id`, and blocking dependencies with advisory `blocked` derivation;
-- Git branch/commit/PR/MR references as links, not integrations;
+- commit and PR/MR references as links, not integrations (branches stay in git via the naming convention);
 - authenticated human and agent identities with admin/member/viewer roles;
 - an immutable append-only activity log;
 - MCP over Streamable HTTP at `/mcp`;
@@ -176,15 +176,9 @@ processes, related-record writes, and dashboard/activity readers alongside
 writers, and finishes stress scenarios with SQLite integrity and foreign-key
 checks.
 
-## Git branch linking
+## Linking commits
 
-Include an issue identifier such as `APP-12` in the branch name and run:
-
-```bash
-LOCAL_BOARD_TOKEN=... local-board sync-branch
-```
-
-This records the current branch against every matching issue. Commit and PR/MR URLs can later be associated through the `add_git_link` MCP tool without granting Local Board access to GitHub or GitLab.
+Branches are deliberately **not** stored on the board: including the issue identifier in the branch name (`feature/APP-12-login`) already carries that association inside git itself, in both directions (`git branch --list '*APP-12*'`), and branch refs go stale after merges. What the board stores is the outcome: when work lands, agents attach the landing commit(s) and the PR/MR with the `add_git_link` MCP tool (`kind: commit | pr | mr`, batchable via `refs`), without granting Local Board any access to GitHub or GitLab.
 
 ## Security boundaries
 

@@ -195,14 +195,14 @@ TOOLS_WRITE = [
          ["issue", "depends_on"]),
     tool(
         "add_git_link",
-        "Associate git refs with an issue. Does not change the issue revision. Returns the created "
+        "Associate landing commits or a PR/MR with an issue (branches live in git via the issue-id naming convention). Does not change the issue revision. Returns the created "
         "link(s) with their ids. Pass either ref or refs (a batch, one transaction).",
         {
             "issue": ISSUE_REF,
-            "ref": {"type": "string", "minLength": 1, "description": "Branch name, SHA, or PR/MR number."},
+            "ref": {"type": "string", "minLength": 1, "description": "Commit SHA or PR/MR number."},
             "refs": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 1,
                      "description": "Several refs of the same kind at once."},
-            "kind": {"type": "string", "enum": list(GIT_LINK_KINDS), "default": "branch"},
+            "kind": {"type": "string", "enum": list(GIT_LINK_KINDS), "default": "commit"},
             "url": {"type": "string"},
             "return_full_issue": RETURN_FULL_ISSUE,
         },
@@ -545,7 +545,7 @@ def _add_git_link(board: Board, actor: int, args: dict[str, Any]) -> Any:
     if bool(single) == bool(batch):
         raise ValueError("provide exactly one of 'ref' or 'refs'")
     links = board.add_git_links(actor, issue_id, batch or [single],
-                                args.get("kind", "branch"), args.get("url"))
+                                args.get("kind", "commit"), args.get("url"))
     if args.get("return_full_issue"):
         return board.get_issue(issue_id)
     if single:

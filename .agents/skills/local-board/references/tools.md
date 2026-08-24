@@ -22,7 +22,7 @@ WRITE (member):
 - `update_comment(comment_id, body)` rev=
 - `add_dependency(issue, depends_on, return_full_issue?)` rev=
 - `remove_dependency(issue, depends_on, return_full_issue?)` rev=
-- `add_git_link(issue, ref | refs[], kind?, url?)` rev= (returns the created link(s) with their ids)
+- `add_git_link(issue, ref | refs[], kind?, url?)` rev= — kind: commit (default) | pr | mr; returns the created link(s) with their ids. Branches are not linked: the issue id in the branch name is the association, inside git itself
 - `create_milestone(name, key?, description?, due_at?)`
 - `create_label(name, key?, color?)`
 

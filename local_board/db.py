@@ -132,7 +132,9 @@ SCHEMA_STATEMENTS = [
 CATEGORIES = ("backlog", "unstarted", "started", "completed", "canceled")
 DONE_CATEGORIES = ("completed", "canceled")
 PRIORITIES = ("none", "low", "medium", "high", "urgent")
-GIT_LINK_KINDS = ("branch", "commit", "pr", "mr")
+# Branches are deliberately not linkable: the issue identifier in the branch name
+# already carries that association inside git itself, and branch refs go stale.
+GIT_LINK_KINDS = ("commit", "pr", "mr")
 
 DEFAULT_STATUSES = [
     {"name": "Backlog", "category": "backlog"},
@@ -1030,7 +1032,7 @@ class Board:
             self._activity(db, actor, "issue", issue_id, "dependency_removed", {"depends_on_id": depends_on_id})
             return self.get_issue(issue_id, db)
 
-    def add_git_links(self, actor: int, issue_id: int, refs: list[str], kind: str = "branch",
+    def add_git_links(self, actor: int, issue_id: int, refs: list[str], kind: str = "commit",
                       url: str | None = None) -> list[dict[str, Any]]:
         """Record one or more refs in a single transaction and return the link rows —
         the confirmation an agent needs, including ids for later update or delete."""
@@ -1059,7 +1061,7 @@ class Board:
                            {"kind": kind, "refs": list(refs)})
             return links
 
-    def add_git_link(self, actor: int, issue_id: int, ref: str, kind: str = "branch",
+    def add_git_link(self, actor: int, issue_id: int, ref: str, kind: str = "commit",
                      url: str | None = None) -> dict[str, Any]:
         return self.add_git_links(actor, issue_id, [ref], kind, url)[0]
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import subprocess
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
@@ -62,9 +61,6 @@ def _build_parser() -> argparse.ArgumentParser:
     apply_config = config_sub.add_parser("apply")
     apply_config.add_argument("--actor", type=int)
 
-    sync = sub.add_parser("sync-branch")
-    sync.add_argument("--token", default=os.environ.get("LOCAL_BOARD_TOKEN"))
-
     return parser
 
 
@@ -114,8 +110,6 @@ def _dispatch(args: argparse.Namespace, config_path: Path) -> None:
         _run_doctor_command(args, config_path)
     elif args.command == "config":
         _run_config(args, config_path)
-    elif args.command == "sync-branch":
-        _run_sync_branch(args)
 
 
 def _report_error(args: argparse.Namespace, exc: Exception) -> None:
@@ -246,20 +240,6 @@ def _run_config(args: argparse.Namespace, config_path: Path) -> None:
             print(json.dumps(ConfigService(board).apply(config, actor_id=args.actor), indent=2))
     except ConfigError as exc:
         raise SystemExit(f"configuration error: {exc}") from exc
-
-
-def _run_sync_branch(args: argparse.Namespace) -> None:
-    board = _require_board(args)
-    current = subprocess.run(
-        ["git", "branch", "--show-current"], check=True, text=True, capture_output=True
-    ).stdout.strip()
-    actor_data = board.authenticate(args.token or "")
-    if not actor_data:
-        raise SystemExit("valid --token or LOCAL_BOARD_TOKEN required")
-    matches = [item for item in board.list_issues() if item["identifier"].lower() in current.lower()]
-    for issue in matches:
-        board.add_git_link(actor_data["id"], issue["id"], current, "branch")
-    print(f"Linked branch {current!r} to {len(matches)} issue(s)")
 
 
 def _ensure_gitignore(root: Path) -> None:

@@ -188,7 +188,7 @@ class WebUiTest(unittest.TestCase):
         )
         self.assertEqual(status, 201)
         self.assertEqual(with_link["ref"], "feature/x")
-        self.assertEqual(with_link["kind"], "branch")
+        self.assertEqual(with_link["kind"], "commit")
 
     def test_patch_comment_by_author_succeeds(self):
         _, issue = self.request("POST", "/api/issues", body={"title": "Commented"})

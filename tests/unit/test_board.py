@@ -146,8 +146,8 @@ class BoardTest(unittest.TestCase):
 
     def test_git_links_are_unique_by_kind_and_ref(self):
         issue = self.board.create_issue(self.admin["id"], "Linked")
-        self.board.add_git_link(self.admin["id"], issue["id"], "main", kind="branch")
-        self.board.add_git_link(self.admin["id"], issue["id"], "main", kind="branch")
+        self.board.add_git_link(self.admin["id"], issue["id"], "abc1234", kind="commit")
+        self.board.add_git_link(self.admin["id"], issue["id"], "abc1234", kind="commit")
         refreshed = self.board.get_issue(issue["id"])
         self.assertEqual(len(refreshed["git_links"]), 1)
 

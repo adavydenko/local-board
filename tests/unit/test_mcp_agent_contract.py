@@ -473,7 +473,7 @@ class Experiment5FixesTest(unittest.TestCase):
     def test_add_git_link_returns_the_created_link(self):
         self.call(self.worker, "create_issue", title="linked")
         link = self.call(self.worker, "add_git_link", issue="APP-1", ref="feature/x")
-        self.assertEqual((link["kind"], link["ref"], link["issue"]), ("branch", "feature/x", "APP-1"))
+        self.assertEqual((link["kind"], link["ref"], link["issue"]), ("commit", "feature/x", "APP-1"))
         self.assertIn("id", link)
         duplicate = self.call(self.worker, "add_git_link", issue="APP-1", ref="feature/x")
         self.assertEqual(duplicate["id"], link["id"])

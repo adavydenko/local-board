@@ -44,8 +44,9 @@ only read tools. Authorization is still enforced server-side for every call.
    acceptance criteria in the Markdown description; `- [ ]` checkboxes are the checklist.
 4. Update fields, labels, and status with a single `update_issue` call. Transitions are free: pick
    the status by its category, and treat `blocked: true` as a signal to finish blockers first.
-5. Record decisions, progress, and handoffs with `add_comment`; link branches and PRs with
-   `add_git_link`.
+5. Record decisions, progress, and handoffs with `add_comment`; when work lands, link the
+   commit(s) and PR/MR with `add_git_link`. Branches are not linked — the issue identifier
+   in the branch name carries that association inside git.
 6. Pass the latest `expected_revision` on every mutation. On `conflict`, re-read the issue before
    deciding whether to retry.
 7. Move the issue to a `completed`-category status when done, or `release_issue` when abandoning

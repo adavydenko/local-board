@@ -28,7 +28,7 @@ Leases default to 30 minutes. Renew by calling `claim_issue` again with the late
 
 ## Verification evidence
 
-Paste the verification command and its output as a fenced block in a comment, and `add_git_link` the commit that contains any verification script. The board stores task statements and outcomes, not artifacts. Any script you cite in a comment must be committed to the repository first; an uncommitted verification run is an unreproducible screenshot for the next agent. Land the artifact in git, land the outcome on the board.
+Put the issue identifier in your branch name (`feature/APP-12-login`) — that naming *is* the branch-to-issue link, inside git itself; the board does not store branches. When you finish, `add_git_link` the landing commit(s) and the PR/MR. Paste the verification command and its output as a fenced block in a comment, and `add_git_link` the commit that contains any verification script. The board stores task statements and outcomes, not artifacts. Any script you cite in a comment must be committed to the repository first; an uncommitted verification run is an unreproducible screenshot for the next agent. Land the artifact in git, land the outcome on the board.
 
 ## Mutation responses
 
