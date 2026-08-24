@@ -5,7 +5,7 @@ description: Coordinate repository work through the Local Board HTTP MCP server.
 
 # Local Board
 
-Local Board is a single board for this repository. Issue identifiers look like `APP-12`. Your identity, the board prefix, statuses, labels, milestones, and policy all arrive in the MCP `initialize` response's `instructions` field — do not call discovery tools at startup, just read it once.
+Local Board is a single board for this repository. Issue identifiers look like `APP-12`. If your MCP client performed `initialize`, its `instructions` field already carries your identity, the board prefix, statuses, labels, milestones, and policy — do not re-fetch them. If you connected without `initialize`, call `get_board_context` once instead. The tracked `.local-board/project.toml` is the same configuration in file form.
 
 ## Work loop
 
@@ -21,6 +21,18 @@ Statuses have fixed categories (backlog/unstarted/started/completed/canceled) bu
 ## Checklists and structure
 
 Markdown checkboxes in the description **are** the checklist — `- [ ]` and `- [x]` lines. Update them in place as you complete items; there is no separate checklist API. There are no issue types (use labels instead) and no attachments (use Markdown links to repository-relative paths). Sub-issues use `parent_id`; milestones are phases, not releases.
+
+## Claims
+
+Leases default to 30 minutes. Renew by calling `claim_issue` again with the latest `revision` before it expires. An expired lease lets another agent take the issue. When you move an issue to a completed- or canceled-category status the server extinguishes the lease itself — do not call `release_issue` on finished work; `release_issue` is only for abandoning or handing off unfinished work.
+
+## Verification evidence
+
+Paste the verification command and its output as a fenced block in a comment, and `add_git_link` the commit that contains any verification script. The board stores task statements and outcomes, not artifacts.
+
+## Mutation responses
+
+Mutations return a compact confirmation — `{identifier, revision, status, category, blocked, assignee}` — not the full issue. Chain the returned `revision` into your next mutation. Pass `return_full_issue: true` only when you need the whole object, or call `get_issue`.
 
 ## Review (adapt to your project)
 

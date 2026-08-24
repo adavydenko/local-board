@@ -214,6 +214,112 @@ class AgentContractTest(unittest.TestCase):
             "member",
         )
 
+    # -- argument validation (experiment 4, defects 1.1 and 1.2) ------------------
+
+    def rpc_error(self, tool_name, arguments):
+        response = self.rpc(self.member["id"], "tools/call",
+                            {"name": tool_name, "arguments": arguments})
+        result = response["result"]
+        self.assertTrue(result.get("isError"), result)
+        return result["structuredContent"]["error"]
+
+    def test_wrong_field_name_is_invalid_request_not_not_found(self):
+        error = self.rpc_error("get_issue", {"id": "APP-1"})
+        self.assertEqual(error["code"], "invalid_request")
+        self.assertIn("unknown field 'id'", error["message"])
+        self.assertIn("issue", error["message"])
+
+    def test_unknown_extra_field_is_rejected(self):
+        self.call("create_issue", title="one")
+        error = self.rpc_error("get_issue", {"issue": "APP-1", "bogus": 1})
+        self.assertEqual(error["code"], "invalid_request")
+        self.assertIn("bogus", error["message"])
+
+    def test_close_typo_gets_a_suggestion(self):
+        error = self.rpc_error("update_issue",
+                               {"issue": "APP-1", "expected_revision": 1, "asignee": "member-agent"})
+        self.assertIn("did you mean 'assignee'", error["message"])
+
+    def test_missing_required_field_names_the_field(self):
+        error = self.rpc_error("claim_issue", {"issue": "APP-1"})
+        self.assertEqual(error["code"], "invalid_request")
+        self.assertIn("missing required field 'expected_revision'", error["message"])
+
+    def test_wrong_type_is_invalid_request(self):
+        error = self.rpc_error("update_issue", {"issue": "APP-1", "expected_revision": "1"})
+        self.assertEqual(error["code"], "invalid_request")
+        self.assertIn("expected_revision", error["message"])
+
+    def test_missing_issue_is_still_not_found(self):
+        error = self.rpc_error("get_issue", {"issue": "APP-99"})
+        self.assertEqual(error["code"], "not_found")
+
+    # -- compact mutation responses (experiment 4, defect 1.3) --------------------
+
+    COMPACT_KEYS = {"identifier", "revision", "status", "category", "blocked", "assignee",
+                    "claim_expires_at"}
+
+    def test_mutations_return_compact_confirmation(self):
+        created = self.call("create_issue", title="compact")
+        updated = self.call("update_issue", issue=created["identifier"],
+                            expected_revision=created["revision"], priority="high")
+        self.assertEqual(set(updated), self.COMPACT_KEYS)
+        self.assertEqual(updated["revision"], created["revision"] + 1)
+
+    def test_return_full_issue_flag_returns_everything(self):
+        created = self.call("create_issue", title="full")
+        self.call("add_comment", issue=created["identifier"], body="context")
+        full = self.call("update_issue", issue=created["identifier"],
+                         expected_revision=created["revision"], priority="low",
+                         return_full_issue=True)
+        self.assertIn("comments", full)
+        self.assertEqual(len(full["comments"]), 1)
+
+    def test_add_comment_reports_current_issue_revision(self):
+        created = self.call("create_issue", title="chatty")
+        comment = self.call("add_comment", issue=created["identifier"], body="note")
+        self.assertEqual(comment["issue_revision"], created["revision"])
+
+    # -- claim with status (experiment 4, defect 1.6) -----------------------------
+
+    def test_claim_with_status_is_one_atomic_call(self):
+        created = self.call("create_issue", title="start me")
+        claimed = self.call("claim_issue", issue=created["identifier"],
+                            expected_revision=created["revision"], status="In Progress")
+        self.assertEqual(claimed["status"], "In Progress")
+        self.assertEqual(claimed["assignee"], "member-agent")
+        entries = self.board.activity("issue", self.board.resolve_issue(created["identifier"]))
+        claim_entries = [entry for entry in entries if entry["action"] == "claimed"]
+        self.assertEqual(len(claim_entries), 1)
+        self.assertEqual(claim_entries[0]["data"]["status"]["to"], "In Progress")
+
+    def test_failed_claim_does_not_move_status(self):
+        created = self.call("create_issue", title="contested")
+        error = self.rpc_error("claim_issue", {"issue": created["identifier"],
+                                               "expected_revision": 99, "status": "In Progress"})
+        self.assertEqual(error["code"], "conflict")
+        issue = self.call("get_issue", issue=created["identifier"])
+        self.assertEqual(issue["status"], "Backlog")
+
+    # -- lease extinguished on completion (experiment 4, item 2.5) ----------------
+
+    def test_completion_extinguishes_lease_and_keeps_assignee(self):
+        created = self.call("create_issue", title="finish me")
+        claimed = self.call("claim_issue", issue=created["identifier"],
+                            expected_revision=created["revision"], status="In Progress")
+        self.assertIsNotNone(claimed["claim_expires_at"])
+        done = self.call("update_issue", issue=created["identifier"],
+                         expected_revision=claimed["revision"], status="Done")
+        self.assertIsNone(done["claim_expires_at"])
+        self.assertEqual(done["assignee"], "member-agent")
+
+    # -- activity identifiers (experiment 4, defect 1.7) --------------------------
+
+    def test_activity_entries_carry_issue_identifier(self):
+        created = self.call("create_issue", title="logged")
+        entries = self.board.activity("issue")
+        self.assertEqual(entries[0]["identifier"], created["identifier"])
+
 
 if __name__ == "__main__":
     unittest.main()

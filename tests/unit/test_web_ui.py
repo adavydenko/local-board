@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+from local_board import __version__
 from local_board.db import Board
 from local_board.web import make_handler
 
@@ -48,6 +49,12 @@ class WebUiTest(unittest.TestCase):
         status, body = self.request("GET", "/api/dashboard", token=False)
         self.assertEqual(status, 401)
         self.assertEqual(body["error"]["code"], "unauthorized")
+
+    def test_health_endpoint_requires_no_auth(self):
+        status, body = self.request("GET", "/health", token=False)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["status"], "ok")
+        self.assertEqual(body["version"], __version__)
 
     def test_root_serves_static_index_without_auth(self):
         status, body = self.request("GET", "/", token=False, parse_json=False)

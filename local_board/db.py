@@ -825,6 +825,11 @@ class Board:
                     self._assert_start_allowed(board, assignee)
                 changes["position"] = self._next_position(db, changes["status"])
                 data["status"] = {"from": current["status"], "to": changes["status"]}
+                if target["category"] in DONE_CATEGORIES:
+                    # The lease guards work in progress; finished work has nothing to lease.
+                    # The assignee stays as attribution of who did the work.
+                    changes["claimed_at"] = None
+                    changes["claim_expires_at"] = None
             if "assignee_id" in changes:
                 changes["claimed_at"] = None
                 changes["claim_expires_at"] = None
@@ -848,7 +853,8 @@ class Board:
             return self.get_issue(issue_id, db)
 
     def claim_issue(self, actor: int, issue_id: int, expected_revision: int,
-                    lease_seconds: int = 1800) -> dict[str, Any]:
+                    lease_seconds: int = 1800, status: str | None = None) -> dict[str, Any]:
+        """Claim the issue and, optionally, move it to a status in the same transaction."""
         if not 60 <= lease_seconds <= 86400:
             raise ValueError("lease_seconds must be between 60 and 86400")
         stamp = datetime.now(UTC)
@@ -863,7 +869,24 @@ class Board:
             )
             if not cur.rowcount:
                 raise ConflictError(f"issue claim conflict: expected revision {expected_revision}")
-            self._activity(db, actor, "issue", issue_id, "claimed", {"lease_seconds": lease_seconds})
+            data: dict[str, Any] = {"lease_seconds": lease_seconds}
+            if status is not None:
+                current = db.execute("SELECT status FROM issues WHERE id=?", (issue_id,)).fetchone()[0]
+                if status != current:
+                    target = self._status(db, status)
+                    position = self._next_position(db, status)
+                    lease_reset = (
+                        ",claimed_at=NULL,claim_expires_at=NULL"
+                        if target["category"] in DONE_CATEGORIES
+                        else ""
+                    )
+                    db.execute(
+                        f"UPDATE issues SET status=?,position=?,revision=revision+1,updated_at=?{lease_reset} "
+                        "WHERE id=?",
+                        (status, position, stamp.isoformat(), issue_id),
+                    )
+                    data["status"] = {"from": current, "to": status}
+            self._activity(db, actor, "issue", issue_id, "claimed", data)
             return self.get_issue(issue_id, db)
 
     def release_issue(self, actor: int, issue_id: int, expected_revision: int) -> dict[str, Any]:
@@ -1007,6 +1030,17 @@ class Board:
                 item = dict(row)
                 item["data"] = json.loads(item.pop("data_json"))
                 rows.append(item)
+            issue_ids = {item["entity_id"] for item in rows if item["entity_type"] == "issue"}
+            if issue_ids:
+                board_row = db.execute("SELECT prefix FROM board WHERE id=1").fetchone()
+                if board_row:
+                    marks = ",".join("?" for _ in issue_ids)
+                    numbers = dict(
+                        db.execute(f"SELECT id,number FROM issues WHERE id IN ({marks})", tuple(issue_ids))
+                    )
+                    for item in rows:
+                        if item["entity_type"] == "issue" and item["entity_id"] in numbers:
+                            item["identifier"] = f"{board_row[0]}-{numbers[item['entity_id']]}"
             return rows
 
     def dashboard(self) -> dict[str, Any]:

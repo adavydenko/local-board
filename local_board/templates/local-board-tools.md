@@ -1,9 +1,37 @@
-# Tool selection
+# Tool signatures
 
-- Read: `whoami`, `get_board_context`, `list_issues`, `get_issue`, `list_activity`.
-- Write (member): `create_issue`, `update_issue`, `claim_issue`, `release_issue`, `add_comment`, `update_comment`, `add_dependency`, `remove_dependency`, `add_git_link`, `create_milestone`, `create_label`.
-- Admin only: update/delete label and milestone, `delete_comment`, update/delete git link, `create_actor`, `rotate_actor_token`, `set_actor_role`.
+`issue` = `APP-12` style identifier; `milestone`/`label`/`actor` accept key, name, or id. `expected_revision` must come from your latest read or mutation response.
 
-`update_issue` accepts any field, including `status` and `labels`, and requires `expected_revision` from the latest read or mutation — a stale value is rejected as a conflict, not silently overwritten. `claim_issue` and `release_issue` also require `expected_revision`.
+Required params are bare; optional params are marked `?`. Trailing marker: `rev+` advances the issue's revision, `rev=` does not.
 
-Use stable references — the issue identifier (`APP-12`), actor name, label key, milestone key — instead of internal database IDs wherever a tool accepts one.
+READ:
+- `whoami()`
+- `get_board_context()`
+- `list_issues(status?, milestone?, assignee?, label?, parent?, query?)`
+- `get_issue(issue)`
+- `list_activity(entity_type?, entity_id?, limit?)`
+
+WRITE (member):
+- `create_issue(title, description?, priority?, status?, milestone?, parent?, assignee?, labels?)` rev+ (new issue)
+- `update_issue(issue, expected_revision, title?, description?, priority?, status?, assignee?, milestone?, parent?, labels?, position?, return_full_issue?)` rev+
+- `claim_issue(issue, expected_revision, lease_seconds?, status?, return_full_issue?)` rev+
+- `release_issue(issue, expected_revision, return_full_issue?)` rev+
+- `add_comment(issue, body)` rev= (returns comment plus `issue_revision`)
+- `update_comment(comment_id, body)` rev=
+- `add_dependency(issue, depends_on, return_full_issue?)` rev=
+- `remove_dependency(issue, depends_on, return_full_issue?)` rev=
+- `add_git_link(issue, ref, kind?, url?, return_full_issue?)` rev=
+- `create_milestone(name, key?, description?, due_at?)`
+- `create_label(name, key?, color?)`
+
+ADMIN-ONLY:
+- `update_label(label, name?, color?)`
+- `delete_label(label)`
+- `update_milestone(milestone, name?, description?, due_at?)`
+- `delete_milestone(milestone)`
+- `delete_comment(comment_id)`
+- `update_git_link(link_id, kind?, ref?, url?)`
+- `delete_git_link(link_id)`
+- `create_actor(name, kind?, role?)`
+- `rotate_actor_token(actor)`
+- `set_actor_role(actor, role)`

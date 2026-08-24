@@ -246,7 +246,7 @@ function renderStats(){
 }
 
 function renderActivity(){
-  activityPanel.innerHTML=(data.activity||[]).map(a=>`<div class="activity-row"><b>${esc(a.actor||'system')}</b><span>${esc(a.entity_type)} #${a.entity_id}</span><span>${esc(a.action)}</span><time>${esc(new Date(a.created_at).toLocaleString())}</time></div>`).join('')||'<div class="empty">No activity yet</div>';
+  activityPanel.innerHTML=(data.activity||[]).map(a=>`<div class="activity-row"><b>${esc(a.actor||'system')}</b><span>${esc(a.identifier||`${a.entity_type} #${a.entity_id}`)}</span><span>${esc(a.action)}</span><time>${esc(new Date(a.created_at).toLocaleString())}</time></div>`).join('')||'<div class="empty">No activity yet</div>';
 }
 
 function statusOptions(selected){return statusesSorted().map(s=>`<option value="${esc(s.name)}" ${s.name===selected?'selected':''}>${esc(s.name)}</option>`).join('')}

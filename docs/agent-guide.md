@@ -14,6 +14,10 @@ Each agent must receive its own token through the process environment or another
 
 The conceptual client configuration in `examples/mcp-http.example.json` illustrates the required URL and header; adapt field names to the MCP client in use.
 
+### CLI wrappers
+
+When driving MCP through a shell wrapper, pass JSON bodies via a temp file (`--args "$(cat args.json)"` or equivalent) rather than inline — Markdown comments with backticks and quotes do not survive shell quoting inline. `GET /health` is an unauthenticated liveness probe. `.local-board/state/server.json` is the running server's address/PID discovery file.
+
 ## Coordinator bootstrap
 
 An agent orchestrator with shell access can initialize the repository and capture its first admin identity without parsing human-oriented output:

@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+import traceback
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from urllib.parse import parse_qs, unquote, urlparse
 
+from . import __version__
 from .db import Board
 from .errors import describe
 
@@ -44,6 +49,8 @@ def make_handler(board: Board):
 
         def _error(self, exc: Exception) -> None:
             status, code, message, retryable = describe(exc)
+            if code == "internal":
+                traceback.print_exc(file=sys.stderr)
             self._json(status, {"error": {"code": code, "message": message, "retryable": retryable}})
 
         def _too_large_response(self) -> None:
@@ -92,6 +99,14 @@ def make_handler(board: Board):
 
         def do_GET(self):
             parts, query = self._route()
+            if parts == ["health"]:
+                try:
+                    board.get_board()
+                    configured = True
+                except KeyError:
+                    configured = False
+                self._json(200, {"status": "ok", "version": __version__, "board_configured": configured})
+                return
             if not parts:
                 body = files("local_board").joinpath("static/index.html").read_bytes()
                 self.send_response(200)
@@ -281,4 +296,19 @@ def make_handler(board: Board):
 
 def serve(board: Board, host: str = "127.0.0.1", port: int = 8765) -> None:
     print(f"Local Board: http://{host}:{port}")
-    ThreadingHTTPServer((host, port), make_handler(board)).serve_forever()
+    server = ThreadingHTTPServer((host, port), make_handler(board))
+    actual_port = server.server_port
+    discovery_path = board.path.parent / "server.json"
+    board.path.parent.mkdir(parents=True, exist_ok=True)
+    discovery = {
+        "url": f"http://{host}:{actual_port}",
+        "pid": os.getpid(),
+        "started_at": datetime.now(UTC).isoformat(),
+    }
+    discovery_path.write_text(json.dumps(discovery), encoding="utf-8")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("Local Board: stopped")
+    finally:
+        discovery_path.unlink(missing_ok=True)

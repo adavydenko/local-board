@@ -7,7 +7,9 @@ domain rules (revisions, cycles, roles) live there.
 
 from __future__ import annotations
 
+import difflib
 import json
+import re
 from typing import Any, Callable
 
 from . import __version__
@@ -47,6 +49,11 @@ MILESTONE_REF_OR_NULL = {
 LABEL_REF = {
     "description": "Label key, name, or id.",
     "oneOf": [{"type": "string"}, {"type": "integer"}],
+}
+RETURN_FULL_ISSUE = {
+    "type": "boolean",
+    "default": False,
+    "description": "Return the full issue object instead of the compact confirmation.",
 }
 
 
@@ -116,7 +123,8 @@ TOOLS_WRITE = [
     ),
     tool(
         "update_issue",
-        "Update issue fields if expected_revision is current.",
+        "Update issue fields if expected_revision is current. Advances the issue revision; "
+        "returns a compact confirmation with the new revision.",
         {
             "issue": ISSUE_REF,
             "expected_revision": {"type": "integer", "minimum": 1},
@@ -129,42 +137,60 @@ TOOLS_WRITE = [
             "parent": ISSUE_REF_OR_NULL,
             "labels": {"type": "array", "items": {"type": "string"}, "description": "Replaces all labels."},
             "position": {"type": "number", "description": "Manual ordering within the status column."},
+            "return_full_issue": RETURN_FULL_ISSUE,
         },
         ["issue", "expected_revision"],
     ),
     tool(
         "claim_issue",
-        "Atomically claim an issue for the authenticated actor with a time-boxed lease.",
+        "Atomically claim an issue for the authenticated actor with a time-boxed lease, "
+        "optionally moving it to a status in the same transaction. Advances the issue revision.",
         {
             "issue": ISSUE_REF,
             "expected_revision": {"type": "integer", "minimum": 1},
             "lease_seconds": {"type": "integer", "minimum": 60, "maximum": 86400, "default": 1800},
+            "status": {"type": "string",
+                       "description": "Optional status to move to atomically, e.g. In Progress."},
+            "return_full_issue": RETURN_FULL_ISSUE,
         },
         ["issue", "expected_revision"],
     ),
     tool(
         "release_issue",
-        "Release an issue claimed by the authenticated actor.",
-        {"issue": ISSUE_REF, "expected_revision": {"type": "integer", "minimum": 1}},
+        "Release an issue claimed by the authenticated actor. Advances the issue revision. "
+        "Not needed for finished work: completing an issue extinguishes the lease automatically.",
+        {
+            "issue": ISSUE_REF,
+            "expected_revision": {"type": "integer", "minimum": 1},
+            "return_full_issue": RETURN_FULL_ISSUE,
+        },
         ["issue", "expected_revision"],
     ),
-    tool("add_comment", "Add a Markdown comment to an issue.",
+    tool("add_comment",
+         "Add a Markdown comment to an issue. Does not change the issue revision; the response "
+         "carries the current issue_revision.",
          {"issue": ISSUE_REF, "body": {"type": "string", "minLength": 1}}, ["issue", "body"]),
-    tool("update_comment", "Edit a comment. Only its author or an admin may edit it.",
+    tool("update_comment",
+         "Edit a comment. Only its author or an admin may edit it. Does not change the issue revision.",
          {"comment_id": {"type": "integer", "minimum": 1}, "body": {"type": "string", "minLength": 1}},
          ["comment_id", "body"]),
-    tool("add_dependency", "Record that an issue is blocked by another issue.",
-         {"issue": ISSUE_REF, "depends_on": ISSUE_REF}, ["issue", "depends_on"]),
-    tool("remove_dependency", "Remove a blocking dependency between two issues.",
-         {"issue": ISSUE_REF, "depends_on": ISSUE_REF}, ["issue", "depends_on"]),
+    tool("add_dependency",
+         "Record that an issue is blocked by another issue. Does not change the issue revision.",
+         {"issue": ISSUE_REF, "depends_on": ISSUE_REF, "return_full_issue": RETURN_FULL_ISSUE},
+         ["issue", "depends_on"]),
+    tool("remove_dependency",
+         "Remove a blocking dependency between two issues. Does not change the issue revision.",
+         {"issue": ISSUE_REF, "depends_on": ISSUE_REF, "return_full_issue": RETURN_FULL_ISSUE},
+         ["issue", "depends_on"]),
     tool(
         "add_git_link",
-        "Associate a branch, commit, PR, or MR with an issue.",
+        "Associate a branch, commit, PR, or MR with an issue. Does not change the issue revision.",
         {
             "issue": ISSUE_REF,
             "ref": {"type": "string", "minLength": 1, "description": "Branch name, SHA, or PR/MR number."},
             "kind": {"type": "string", "enum": list(GIT_LINK_KINDS), "default": "branch"},
             "url": {"type": "string"},
+            "return_full_issue": RETURN_FULL_ISSUE,
         },
         ["issue", "ref"],
     ),
@@ -268,6 +294,86 @@ def schemas(role: str | None = None) -> list[dict[str, Any]]:
     return _ROLE_TOOLS.get(role, _ALL_TOOLS)
 
 
+# -- argument validation -------------------------------------------------------------
+
+_TOOL_SCHEMAS = {item["name"]: item["inputSchema"] for item in _ALL_TOOLS}
+
+
+def _type_matches(expected: str, value: Any) -> bool:
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    if expected == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    if expected == "boolean":
+        return isinstance(value, bool)
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "array":
+        return isinstance(value, list)
+    if expected == "null":
+        return value is None
+    return True
+
+
+def _value_matches(schema: dict[str, Any], value: Any) -> bool:
+    if "oneOf" in schema:
+        return any(_value_matches(branch, value) for branch in schema["oneOf"])
+    expected = schema.get("type")
+    if expected is not None and not _type_matches(expected, value):
+        return False
+    if "enum" in schema and value not in schema["enum"]:
+        return False
+    if isinstance(value, str):
+        if "pattern" in schema and not re.fullmatch(schema["pattern"], value):
+            return False
+        if len(value) < schema.get("minLength", 0):
+            return False
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            return False
+        if "maximum" in schema and value > schema["maximum"]:
+            return False
+    if isinstance(value, list) and "items" in schema:
+        return all(_value_matches(schema["items"], item) for item in value)
+    return True
+
+
+def _expectation(schema: dict[str, Any]) -> str:
+    if "enum" in schema:
+        return "one of " + ", ".join(map(str, schema["enum"]))
+    if "oneOf" in schema:
+        return " or ".join(_expectation(branch) for branch in schema["oneOf"])
+    parts = [schema.get("type", "value")]
+    if "pattern" in schema:
+        parts.append(f"matching {schema['pattern']}")
+    if "minimum" in schema:
+        parts.append(f">= {schema['minimum']}")
+    return " ".join(parts)
+
+
+def validate_arguments(name: str, args: dict[str, Any]) -> None:
+    """Enforce the published inputSchema so a typo is invalid_request, not a fake not_found."""
+    schema = _TOOL_SCHEMAS[name]
+    properties = schema["properties"]
+    for field in args:
+        if field not in properties:
+            message = f"unknown field '{field}' for {name}"
+            close = difflib.get_close_matches(field, properties, n=1)
+            if close:
+                message += f"; did you mean '{close[0]}'?"
+            else:
+                message += f"; valid fields: {', '.join(sorted(properties))}"
+            raise ValueError(message)
+    for field in schema["required"]:
+        if field not in args:
+            raise ValueError(f"missing required field '{field}' for {name}")
+    for field, value in args.items():
+        if not _value_matches(properties[field], value):
+            raise ValueError(
+                f"invalid value for field '{field}': expected {_expectation(properties[field])}"
+            )
+
+
 # -- reference resolution -----------------------------------------------------------
 
 def _resolve_actor(board: Board, value: int | str) -> int:
@@ -336,6 +442,14 @@ def _create_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
     )
 
 
+def _confirmation(issue: dict[str, Any], args: dict[str, Any]) -> dict[str, Any]:
+    """Compact mutation acknowledgement; the full object costs return_full_issue: true."""
+    if args.get("return_full_issue"):
+        return issue
+    keys = ("identifier", "revision", "status", "category", "blocked", "assignee", "claim_expires_at")
+    return {key: issue.get(key) for key in keys}
+
+
 def _update_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
     fields: dict[str, Any] = {"expected_revision": args["expected_revision"]}
@@ -353,22 +467,28 @@ def _update_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
         fields["parent_id"] = None if value is None else board.resolve_issue(value)
     if "labels" in args:
         fields["labels"] = args["labels"]
-    return board.update_issue(actor, issue_id, **fields)
+    return _confirmation(board.update_issue(actor, issue_id, **fields), args)
 
 
 def _claim_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
-    return board.claim_issue(actor, issue_id, args["expected_revision"], args.get("lease_seconds", 1800))
+    issue = board.claim_issue(
+        actor, issue_id, args["expected_revision"], args.get("lease_seconds", 1800),
+        status=args.get("status"),
+    )
+    return _confirmation(issue, args)
 
 
 def _release_issue(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
-    return board.release_issue(actor, issue_id, args["expected_revision"])
+    return _confirmation(board.release_issue(actor, issue_id, args["expected_revision"]), args)
 
 
 def _add_comment(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
-    return board.add_comment(actor, issue_id, args["body"])
+    comment = board.add_comment(actor, issue_id, args["body"])
+    issue_revision = board.get_issue(issue_id)["revision"]
+    return {**comment, "issue_revision": issue_revision}
 
 
 def _update_comment(board: Board, actor: int, args: dict[str, Any]) -> Any:
@@ -382,18 +502,19 @@ def _delete_comment(board: Board, actor: int, args: dict[str, Any]) -> Any:
 def _add_dependency(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
     depends_on_id = board.resolve_issue(args["depends_on"])
-    return board.add_dependency(actor, issue_id, depends_on_id)
+    return _confirmation(board.add_dependency(actor, issue_id, depends_on_id), args)
 
 
 def _remove_dependency(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
     depends_on_id = board.resolve_issue(args["depends_on"])
-    return board.remove_dependency(actor, issue_id, depends_on_id)
+    return _confirmation(board.remove_dependency(actor, issue_id, depends_on_id), args)
 
 
 def _add_git_link(board: Board, actor: int, args: dict[str, Any]) -> Any:
     issue_id = board.resolve_issue(args["issue"])
-    return board.add_git_link(actor, issue_id, args["ref"], args.get("kind", "branch"), args.get("url"))
+    issue = board.add_git_link(actor, issue_id, args["ref"], args.get("kind", "branch"), args.get("url"))
+    return _confirmation(issue, args)
 
 
 def _update_git_link(board: Board, actor: int, args: dict[str, Any]) -> Any:
@@ -485,6 +606,7 @@ def call_tool(board: Board, actor: int, name: str, arguments: dict[str, Any]) ->
     handler = _HANDLERS.get(name)
     if handler is None:
         raise KeyError(f"unknown tool: {name}")
+    validate_arguments(name, args)
     return handler(board, actor, args)
 
 

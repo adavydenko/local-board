@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from .backup import create_backup, restore_backup
 from .config import ConfigError, ConfigService, default_config, load_config, suggested_prefix
 from .db import Board
 from .doctor import run_doctor
+from .errors import describe
 from .onboarding import install_onboarding
 from .repository import Repository, RepositoryNotFound, resolve_database_path
 from .web import serve
@@ -86,6 +88,16 @@ def main() -> None:
     args = _build_parser().parse_args()
     config_path = _config_path(args)
 
+    try:
+        _dispatch(args, config_path)
+    except SystemExit:
+        raise
+    except Exception as exc:
+        _report_error(args, exc)
+        raise SystemExit(1) from exc
+
+
+def _dispatch(args: argparse.Namespace, config_path: Path) -> None:
     if args.command == "init":
         _run_init(args, config_path)
     elif args.command == "actor":
@@ -104,6 +116,19 @@ def main() -> None:
         _run_config(args, config_path)
     elif args.command == "sync-branch":
         _run_sync_branch(args)
+
+
+def _report_error(args: argparse.Namespace, exc: Exception) -> None:
+    _, code, message, retryable = describe(exc)
+    if code == "internal":
+        message = str(exc)
+    as_json = getattr(args, "json", False)
+    if as_json:
+        print(json.dumps({"error": {"code": code, "message": message, "retryable": retryable}}))
+    else:
+        print(f"error: {message}", file=sys.stderr)
+    if code == "internal" and os.environ.get("LOCAL_BOARD_DEBUG"):
+        raise exc
 
 
 def _run_init(args: argparse.Namespace, config_path: Path) -> None:
