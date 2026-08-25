@@ -13,12 +13,12 @@ Your MCP client performs the MCP protocol handshake (`initialize`) automatically
 
 ## Work loop
 
-1. Call `list_issues`, filtered by the milestone, label, or query you were given (or ask the user/planner which to use). Search before creating work — a focused `list_issues` query first, so you do not file a duplicate. When you are the planner, work the other direction: turn the plan into milestones and issues with acceptance criteria before implementation agents start.
+1. Call `list_issues`, filtered by the milestone, label, or query you were given (or ask the user/planner which to use). When you are the planner, work the other direction: turn the plan into milestones and issues with acceptance criteria before implementation agents start.
 2. Call `get_issue` to read the full description, comments, labels, dependencies, blockers, and revision.
 3. Do not start an issue whose `blocked` is `true` — finish or reassign its blockers first. The server does not enforce this: `blocked` is a signal derived from open dependencies, not a lock, and honoring it is this instruction's job.
 4. Call `claim_issue` with the current `revision` before you start working on it — implementation, planning, testing, and review alike.
-5. Work. Add short `add_comment` entries for decisions, material progress, and handoffs. Material newly discovered work gets its own issue — do not silently expand this one's scope.
-6. When the work is finished — acceptance checkboxes checked, or a comment explaining the ones that are not — call `update_issue` with the latest `revision` to move the issue to a completed-category status (e.g. `Done`). When abandoning or handing off unfinished work, first `add_comment` why — what blocked you, what you learned, what remains — and set any label or status that helps the next agent, then call `release_issue`.
+5. Work. Add short `add_comment` entries for decisions, material progress, and handoffs.
+6. When the work is finished, call `update_issue` with the latest `revision` to move the issue to a completed-category status (e.g. `Done`). When abandoning or handing off unfinished work, first `add_comment` why — what blocked you, what you learned, what remains — and set any label or status that helps the next agent, then call `release_issue`.
 
 Statuses have fixed categories (backlog/unstarted/started/completed/canceled) but configurable names, and transitions between them are free — the server allows any move, even Backlog straight to Done. Free transitions are what makes mistakes correctable; the expected path for real work is the loop above.
 
@@ -28,7 +28,7 @@ Markdown checkboxes in the description **are** the checklist — `- [ ]` and `- 
 
 ## Claims
 
-Claiming makes you the assignee and grants a lease (default 30 minutes) — the lease is the mutual-exclusion window, the assignee is the attribution. Renew by calling `claim_issue` again with the latest `revision` before it expires; an expired lease lets another agent take the issue. Never take over an issue whose lease is still live — comment and coordinate with its holder instead. Moving an issue to a completed- or canceled-category status extinguishes the lease itself but keeps you as assignee — do not call `release_issue` on finished work. `release_issue` is only for abandoning or handing off unfinished work; it clears both the lease and the assignee.
+Claiming makes you the assignee and grants a lease (default 30 minutes) — the lease is the mutual-exclusion window, the assignee is the attribution. Renew by calling `claim_issue` again with the latest `revision` before it expires; an expired lease lets another agent take the issue. Moving an issue to a completed- or canceled-category status extinguishes the lease itself but keeps you as assignee — do not call `release_issue` on finished work. `release_issue` is only for abandoning or handing off unfinished work; it clears both the lease and the assignee.
 
 ## Verification evidence
 

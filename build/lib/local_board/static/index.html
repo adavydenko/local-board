@@ -1,0 +1,426 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Local Board</title>
+  <style>
+    :root{color-scheme:dark;--bg:#090b10;--side:#0d1016;--panel:#121620;--raised:#171c27;--line:#262d3b;--text:#eef1f7;--muted:#8e98aa;--accent:#8b7cf6;--accent2:#6255d9;--danger:#fb7185;--warn:#fbbf24;--ok:#4ade80}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at 55% -20%,#1a1b35 0,transparent 38%),var(--bg);color:var(--text);font:14px Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}
+    button,input,select,textarea{font:inherit}
+    button{cursor:pointer}
+    .app{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
+    .sidebar{background:rgba(13,16,22,.92);border-right:1px solid var(--line);padding:22px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
+    .brand{display:flex;gap:10px;align-items:center;font-size:17px;font-weight:750;padding:0 10px 25px}
+    .logo{display:grid;place-items:center;width:27px;height:27px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#6355d8);box-shadow:0 0 25px #8b7cf655}
+    .nav{display:flex;align-items:center;gap:11px;border:0;color:var(--muted);background:transparent;padding:10px 11px;border-radius:8px;text-align:left;width:100%;margin:2px 0}
+    .nav:hover,.nav.active{background:#1a1f2a;color:var(--text)}
+    .nav span{width:18px;text-align:center}
+    .identity{margin-top:auto;padding:12px;background:#11151e;border:1px solid var(--line);border-radius:9px}
+    .identity strong{display:block}
+    .identity small{color:var(--muted)}
+    .main{padding:26px 30px;min-width:0}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:20px}
+    .title h1{font-size:22px;margin:0 0 5px}
+    .muted{color:var(--muted)}
+    .actions{display:flex;gap:8px}
+    .btn{border:1px solid transparent;border-radius:8px;padding:8px 12px;background:var(--accent);color:white;font-weight:650}
+    .btn:hover{background:var(--accent2)}
+    .btn.secondary{background:#181d28;border-color:var(--line);color:var(--text)}
+    .btn.danger{background:#351923;color:#fda4af}
+    .btn.small{padding:5px 8px;font-size:12px}
+    .select,input,textarea{background:#0d1119;border:1px solid var(--line);border-radius:8px;color:var(--text);padding:9px 10px;outline:none}
+    .select:focus,input:focus,textarea:focus{border-color:var(--accent)}
+    .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
+    .toolbar .select{min-width:170px}
+    .stats{display:grid;grid-template-columns:repeat(4,minmax(120px,180px));gap:10px;margin-bottom:18px}
+    .stat{background:linear-gradient(145deg,#141923,#10141c);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+    .stat b{font-size:21px;display:block;margin-bottom:3px}
+    .stat span{font-size:12px;color:var(--muted)}
+    .board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(230px,1fr);gap:11px;overflow:auto;padding-bottom:15px;min-height:540px}
+    .column{background:#0d1118;border:1px solid #202633;border-radius:11px;padding:9px}
+    .column-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:700;color:#b7becc;padding:5px 5px 9px}
+    .count{background:#252b38;color:var(--muted);border-radius:10px;padding:1px 7px}
+    .card{background:linear-gradient(145deg,#171c27,#131821);border:1px solid #29303e;border-radius:9px;padding:12px;margin:0 0 8px;transition:.15s;cursor:pointer}
+    .card:hover{transform:translateY(-1px);border-color:#4c456f;box-shadow:0 8px 24px #0005}
+    .card-title{font-weight:650;line-height:1.4;margin-bottom:11px}
+    .meta{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:11px}
+    .badges{display:flex;gap:5px;margin-bottom:9px;flex-wrap:wrap}
+    .badge{font-size:10px;padding:2px 6px;border-radius:5px;background:#252b38;color:#c7cedb}
+    .badge.claimed{background:#132a1d;color:var(--ok)}
+    .badge.blocked{background:#3a1b25;color:var(--danger)}
+    .chip{display:inline-flex;align-items:center;border:1px solid var(--line);background:#161b26;color:var(--muted);border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;margin:2px 4px 2px 0}
+    .chip.active{color:var(--text);background:#221c3a;border-color:var(--accent)}
+    .priority-urgent{color:var(--danger)}
+    .priority-high{color:var(--warn)}
+    .empty{color:#5f6878;text-align:center;padding:42px 5px;font-size:12px}
+    .panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden}
+    .activity-row{display:grid;grid-template-columns:150px 150px 1fr 190px;gap:15px;padding:12px 16px;border-bottom:1px solid var(--line);color:var(--muted)}
+    .hidden{display:none!important}
+    .login{position:fixed;inset:0;background:radial-gradient(circle at center,#171a2d,#07090ddd 50%);display:grid;place-items:center;z-index:20}
+    .login-card{width:min(400px,calc(100vw - 30px));padding:29px;background:#121620;border:1px solid #2b3241;border-radius:14px;box-shadow:0 30px 80px #000}
+    .login-card h2{margin:0 0 8px}
+    .login-card input{width:100%;margin:14px 0 10px}
+    .error{color:#fda4af;margin-top:9px}
+    .dialog{border:1px solid #30384a;background:#121620;color:var(--text);border-radius:14px;width:min(580px,calc(100vw - 28px));padding:0;box-shadow:0 30px 100px #000}
+    .dialog.wide{width:min(860px,calc(100vw - 28px))}
+    .dialog::backdrop{background:#05060acc;backdrop-filter:blur(3px)}
+    .dialog-body{padding:22px}
+    .dialog h2{margin:0 0 18px}
+    .field{display:block;margin:11px 0;color:#b8c0cf;font-size:12px}
+    .field input,.field textarea,.field select{width:100%;margin-top:6px}
+    .field textarea{min-height:110px;resize:vertical}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+    .detail-head{display:flex;justify-content:space-between;gap:15px}
+    .detail-head h2{margin:4px 0}
+    .detail-id{color:var(--muted);font-size:12px}
+    .markdown{line-height:1.65;color:#d9deea;padding:12px 0;white-space:normal}
+    .markdown code{background:#262c38;padding:2px 5px;border-radius:4px}
+    .bullet{margin:2px 0}
+    .section{border-top:1px solid var(--line);padding:16px 0}
+    .section h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 11px}
+    .section h4{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:12px 0 6px;font-weight:650}
+    .check{display:flex;align-items:center;gap:9px;padding:6px 0}
+    .check.done span{text-decoration:line-through;color:var(--muted)}
+    .comment{padding:10px 0;border-bottom:1px solid #232936}
+    .comment strong{font-size:12px}
+    .comment p{margin:5px 0;color:#ccd2df}
+    .inline-form{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
+    .inline-form input,.inline-form select{flex:1;min-width:90px}
+    .detail-grid{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:22px}
+    .side-fields{background:#0e121a;border-radius:9px;padding:12px;height:max-content}
+    .side-fields .field{margin:0 0 12px}
+    .link{color:#a99df9}
+    .link-btn{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;font:inherit;text-decoration:underline}
+    .dep-row{display:flex;align-items:center;gap:8px;padding:3px 0}
+    .blocked{color:#fda4af}
+    .toast{position:fixed;right:22px;bottom:22px;background:#202635;border:1px solid #394256;border-radius:9px;padding:11px 15px;box-shadow:0 12px 40px #000;z-index:30}
+    @media(max-width:850px){.app{grid-template-columns:64px 1fr}.sidebar{padding:18px 8px}.brand{padding:0 9px 22px}.brand-text,.nav label,.identity{display:none}.nav{justify-content:center}.main{padding:20px 14px}.detail-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.activity-row{grid-template-columns:1fr 1fr}.hide-mobile{display:none}}
+  </style>
+</head>
+<body>
+<div class="login" id="login">
+  <form class="login-card" id="loginForm">
+    <div class="brand"><span class="logo">&#9670;</span><span>Local Board</span></div>
+    <h2>Connect to this repository</h2>
+    <p class="muted">Enter an actor token created with <code>local-board actor</code>. The token stays in this browser.</p>
+    <input id="tokenInput" type="password" placeholder="Bearer token" required>
+    <button class="btn" style="width:100%">Open board</button>
+    <div class="error" id="loginError"></div>
+  </form>
+</div>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><span class="logo">&#9670;</span><span class="brand-text">Local Board</span></div>
+    <button class="nav active" data-view="board"><span>&#9638;</span><label>Board</label></button>
+    <button class="nav" data-view="activity"><span>&#9121;</span><label>Activity</label></button>
+    <div class="identity"><strong id="actorName">&mdash;</strong><small id="actorKind">Not connected</small></div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="title"><h1 id="pageTitle">Board</h1><div class="muted" id="subtitle">Repository work shared by humans and agents</div></div>
+      <div class="actions"><button class="btn secondary" id="refreshBtn">&#8635; Refresh</button><button class="btn" id="newIssueBtn">&#65291; New issue</button></div>
+    </header>
+    <section id="boardView">
+      <div class="toolbar">
+        <input class="select" id="searchInput" placeholder="Search title or identifier&hellip;">
+        <select class="select" id="milestoneFilter"><option value="">All milestones</option></select>
+        <select class="select" id="assigneeFilter"><option value="">All assignees</option></select>
+        <span class="muted" id="boardMeta"></span>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="board" id="board"></div>
+    </section>
+    <section id="activityView" class="hidden"><div class="panel" id="activityPanel"></div></section>
+  </main>
+</div>
+<dialog class="dialog" id="issueDialog">
+  <form class="dialog-body" id="issueForm">
+    <h2>New issue</h2>
+    <label class="field">Title<input id="issueTitle" required maxlength="200"></label>
+    <label class="field">Description (Markdown &mdash; use <code>- [ ]</code> for checklist items)<textarea id="issueDescription" placeholder="Context, scope, acceptance criteria, constraints"></textarea></label>
+    <div class="grid2">
+      <label class="field">Priority<select id="issuePriority"><option value="none">none</option><option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option><option value="urgent">urgent</option></select></label>
+      <label class="field">Milestone<select id="issueMilestone"><option value="">No milestone</option></select></label>
+    </div>
+    <label class="field">Labels<div class="badges" id="issueLabelPicker"></div></label>
+    <div class="dialog-actions"><button type="button" class="btn secondary" data-close="issueDialog">Cancel</button><button class="btn">Create issue</button></div>
+    <div class="error" id="issueError"></div>
+  </form>
+</dialog>
+<dialog class="dialog wide" id="detailDialog"><div class="dialog-body" id="detailBody"></div></dialog>
+<div class="toast hidden" id="toast"></div>
+<script>
+const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+let token='';
+try{token=localStorage.getItem('localBoardToken')||''}catch{token=''}
+let data={},identity=null,currentIssue=null,currentView='board';
+
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+
+async function api(path,options={}){
+  const response=await fetch(path,{...options,headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json',...(options.headers||{})}});
+  let body={};
+  if(response.status!==204){try{body=await response.json()}catch{}}
+  if(!response.ok){
+    const info=body.error||{};
+    throw Object.assign(new Error(info.message||`HTTP ${response.status}`),{code:info.code,retryable:info.retryable});
+  }
+  return body;
+}
+
+function notify(message){
+  toast.textContent=message;toast.classList.remove('hidden');
+  clearTimeout(notify._t);notify._t=setTimeout(()=>toast.classList.add('hidden'),2400);
+}
+
+function markdown(value){
+  let out=esc(value||'_No description._');
+  out=out.replace(/`([^`]+)`/g,'<code>$1</code>');
+  out=out.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  out=out.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  out=out.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  out=out.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  out=out.replace(/^-\s*\[x\]\s*(.+)$/gim,'<label class="check done"><input type="checkbox" checked disabled><span>$1</span></label>');
+  out=out.replace(/^-\s*\[ \]\s*(.+)$/gm,'<label class="check"><input type="checkbox" disabled><span>$1</span></label>');
+  out=out.replace(/^- (.+)$/gm,'<div class="bullet">&bull; $1</div>');
+  out=out.replace(/\n/g,'<br>');
+  return out;
+}
+
+async function loadAll(){
+  const [me,dashboard]=await Promise.all([api('/api/me'),api('/api/dashboard')]);
+  identity=me;data=dashboard;
+  login.classList.add('hidden');
+  actorName.textContent=identity.name;
+  actorKind.textContent=identity.kind+' · '+identity.role;
+  render();
+}
+async function reloadBoard(){data=await api('/api/dashboard');render()}
+
+function statusesSorted(){return [...(data.board?.statuses||[])].sort((a,b)=>a.position-b.position)}
+function findIssueRef(id){return (data.issues||[]).find(x=>x.id===id)}
+
+function render(){renderFilters();renderStats();renderBoard();renderActivity()}
+
+function renderFilters(){
+  const milestones=data.board?.milestones||[];
+  const prevM=milestoneFilter.value;
+  milestoneFilter.innerHTML='<option value="">All milestones</option>'+milestones.map(m=>`<option value="${m.id}" ${String(m.id)===prevM?'selected':''}>${esc(m.name)}</option>`).join('');
+  const actors=data.actors||[];
+  const prevA=assigneeFilter.value;
+  assigneeFilter.innerHTML='<option value="">All assignees</option>'+actors.map(a=>`<option value="${a.id}" ${String(a.id)===prevA?'selected':''}>${esc(a.name)}</option>`).join('');
+  boardMeta.textContent=data.board?`${data.board.prefix} · ${data.board.name}${data.board.config_digest?' · managed by project.toml':''}`:'';
+}
+
+function filteredIssues(){
+  const q=(searchInput.value||'').trim().toLowerCase();
+  const milestone=milestoneFilter.value,assignee=assigneeFilter.value;
+  return (data.issues||[]).filter(i=>
+    (!q||i.title.toLowerCase().includes(q)||i.identifier.toLowerCase().includes(q))&&
+    (!milestone||String(i.milestone_id)===milestone)&&
+    (!assignee||String(i.assignee_id)===assignee)
+  );
+}
+
+function card(issue){
+  const labels=(issue.labels||[]).map(l=>`<span class="chip" style="background:${esc(l.color)}22;border-color:${esc(l.color)}55;color:${esc(l.color)}">${esc(l.name)}</span>`).join('');
+  const badges=`${issue.claim_expires_at?'<span class="badge claimed">claimed</span>':''}${issue.blocked?'<span class="badge blocked">blocked</span>':''}`;
+  return `<article class="card" data-ref="${esc(issue.identifier)}">${badges?`<div class="badges">${badges}</div>`:''}${labels?`<div class="badges">${labels}</div>`:''}<div class="card-title">${esc(issue.title)}</div><div class="meta"><span>${esc(issue.identifier)} · r${issue.revision}</span><span class="priority-${esc(issue.priority)}">${esc(issue.priority)}</span></div></article>`;
+}
+
+function renderBoard(){
+  const issues=filteredIssues();
+  const cols=statusesSorted();
+  board.innerHTML=cols.length?cols.map(s=>{
+    const items=issues.filter(i=>i.status===s.name);
+    return `<div class="column"><div class="column-head"><span>${esc(s.name)}</span><span class="count">${items.length}</span></div>${items.map(card).join('')||'<div class="empty">No issues</div>'}</div>`;
+  }).join(''):'<div class="empty">No statuses configured for this board.</div>';
+}
+
+function renderStats(){
+  const issues=filteredIssues();
+  const started=new Set(statusesSorted().filter(s=>s.category==='started').map(s=>s.name));
+  stats.innerHTML=`<div class="stat"><b>${issues.length}</b><span>Total issues</span></div><div class="stat"><b>${issues.filter(i=>started.has(i.status)).length}</b><span>In progress</span></div><div class="stat"><b>${issues.filter(i=>i.blocked).length}</b><span>Blocked</span></div><div class="stat"><b>${issues.filter(i=>i.priority==='urgent'||i.priority==='high').length}</b><span>High priority</span></div>`;
+}
+
+function renderActivity(){
+  activityPanel.innerHTML=(data.activity||[]).map(a=>`<div class="activity-row"><b>${esc(a.actor||'system')}</b><span>${esc(a.identifier||`${a.entity_type} #${a.entity_id}`)}</span><span>${esc(a.action)}</span><time>${esc(new Date(a.created_at).toLocaleString())}</time></div>`).join('')||'<div class="empty">No activity yet</div>';
+}
+
+function statusOptions(selected){return statusesSorted().map(s=>`<option value="${esc(s.name)}" ${s.name===selected?'selected':''}>${esc(s.name)}</option>`).join('')}
+function actorOptions(selected){return '<option value="">Unassigned</option>'+(data.actors||[]).map(a=>`<option value="${a.id}" ${selected===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}
+function priorityOptions(selected){return ['none','low','medium','high','urgent'].map(p=>`<option value="${p}" ${p===selected?'selected':''}>${p}</option>`).join('')}
+function milestoneOptions(selected){return '<option value="">No milestone</option>'+(data.board?.milestones||[]).map(m=>`<option value="${m.id}" ${selected===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}
+function labelChips(issue){
+  const active=new Set((issue.labels||[]).map(l=>l.id));
+  return (data.board?.labels||[]).map(l=>`<button type="button" class="chip ${active.has(l.id)?'active':''}" data-action="toggle-label" data-label="${l.id}" style="border-color:${esc(l.color)}99">${esc(l.name)}</button>`).join('')||'<span class="muted">No labels configured</span>';
+}
+function issueLink(ref){return `<button type="button" class="link-btn" data-action="open-issue" data-ref="${esc(ref.identifier)}">${esc(ref.identifier)}</button> ${esc(ref.title)}`}
+
+async function openDetail(ref){
+  try{currentIssue=await api('/api/issues/'+encodeURIComponent(ref));renderDetail();detailDialog.showModal()}
+  catch(err){notify(err.message)}
+}
+async function refreshDetail(){
+  currentIssue=await api('/api/issues/'+encodeURIComponent(currentIssue.identifier));
+  renderDetail();
+  await reloadBoard();
+}
+
+function renderDetail(){
+  const i=currentIssue;
+  const mine=!!identity&&i.assignee_id===identity.id;
+  const parentRef=i.parent_id?findIssueRef(i.parent_id):null;
+  const parentHtml=i.parent_id?(parentRef?issueLink(parentRef):('#'+i.parent_id)):'';
+  const childrenHtml=(i.children||[]).map(c=>`<div>${issueLink(c)}</div>`).join('')||'<div class="muted">No sub-issues</div>';
+  const blockedByHtml=(i.blocked_by||[]).map(d=>`<div class="dep-row">${d.completed?'&check;':'&#9675;'} ${issueLink(d)}<button type="button" class="btn secondary small" data-action="remove-dependency" data-depends="${d.id}">remove</button></div>`).join('')||'<div class="muted">None</div>';
+  const blocksHtml=(i.blocks||[]).map(d=>`<div class="dep-row">${issueLink(d)}</div>`).join('')||'<div class="muted">None</div>';
+  const depOptions=(data.issues||[]).filter(x=>x.id!==i.id).map(x=>`<option value="${x.id}">${esc(x.identifier)} &mdash; ${esc(x.title)}</option>`).join('');
+  const gitLinksHtml=(i.git_links||[]).map(l=>`<div>&#9096; ${esc(l.kind)} · ${esc(l.ref)}${l.url?` · <a class="link" href="${esc(l.url)}" target="_blank" rel="noopener">open</a>`:''}</div>`).join('')||'<div class="muted">No Git links</div>';
+  const commentsHtml=(i.comments||[]).map(c=>`<div class="comment"><strong>${esc(c.author)}</strong><p>${markdown(c.body)}</p></div>`).join('')||'<div class="muted">No comments yet</div>';
+
+  detailBody.innerHTML=`<div class="detail-head"><div><div class="detail-id">${esc(i.identifier)} · revision ${i.revision}</div><h2>${esc(i.title)}</h2><div class="badges"><span class="badge priority-${esc(i.priority)}">${esc(i.priority)}</span>${i.blocked?'<span class="badge blocked">blocked</span>':''}${i.claim_expires_at?`<span class="badge claimed">claimed${mine?' by you':''}</span>`:''}</div></div><button type="button" class="btn secondary" data-action="close-detail">&times;</button></div>
+<div class="detail-grid">
+  <div>
+    <div class="markdown">${markdown(i.description)}</div>
+    ${parentHtml?`<div class="section"><h3>Parent</h3><div>${parentHtml}</div></div>`:''}
+    <div class="section"><h3>Sub-issues</h3>${childrenHtml}</div>
+    <div class="section"><h3>Comments</h3>${commentsHtml}<form class="inline-form" data-form="comment"><input name="body" placeholder="Write an update" required><button class="btn small">Comment</button></form></div>
+    <div class="section"><h3>Dependencies</h3><h4>Blocked by</h4>${blockedByHtml}<h4>Blocks</h4>${blocksHtml}<form class="inline-form" data-form="dependency"><select name="depends_on" required><option value="">Blocked by&hellip;</option>${depOptions}</select><button class="btn small">Add</button></form></div>
+    <div class="section"><h3>Git links</h3>${gitLinksHtml}<form class="inline-form" data-form="gitlink"><select name="kind"><option value="branch">branch</option><option value="commit">commit</option><option value="pr">pr</option><option value="mr">mr</option></select><input name="ref" placeholder="ref" required><input name="url" placeholder="URL (optional)"><button class="btn small">Add</button></form></div>
+  </div>
+  <aside class="side-fields">
+    <label class="field">Status<select data-field="status">${statusOptions(i.status)}</select></label>
+    <label class="field">Assignee<select data-field="assignee_id">${actorOptions(i.assignee_id)}</select></label>
+    <label class="field">Priority<select data-field="priority">${priorityOptions(i.priority)}</select></label>
+    <label class="field">Milestone<select data-field="milestone_id">${milestoneOptions(i.milestone_id)}</select></label>
+    <label class="field">Labels<div class="badges">${labelChips(i)}</div></label>
+    ${mine?'<button type="button" class="btn secondary" style="width:100%" data-action="release">Release issue</button>':'<button type="button" class="btn" style="width:100%" data-action="claim">Claim issue</button>'}
+  </aside>
+</div>`;
+}
+
+async function patchIssue(fields){
+  try{
+    currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}`,{method:'PATCH',body:JSON.stringify({expected_revision:currentIssue.revision,...fields})});
+    renderDetail();
+    await reloadBoard();
+  }catch(err){
+    notify(err.message);
+    await refreshDetail();
+    throw err;
+  }
+}
+async function claimIssue(){
+  currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/claim`,{method:'POST',body:JSON.stringify({expected_revision:currentIssue.revision})});
+  notify('Issue claimed');renderDetail();await reloadBoard();
+}
+async function releaseIssue(){
+  currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/release`,{method:'POST',body:JSON.stringify({expected_revision:currentIssue.revision})});
+  notify('Issue released');renderDetail();await reloadBoard();
+}
+async function toggleLabel(labelId){
+  const active=new Set((currentIssue.labels||[]).map(l=>l.id));
+  active.has(labelId)?active.delete(labelId):active.add(labelId);
+  await patchIssue({labels:[...active]});
+}
+async function removeDependency(dependsOnId){
+  await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/dependencies`,{method:'DELETE',body:JSON.stringify({depends_on:dependsOnId})});
+  await refreshDetail();
+}
+
+detailBody.addEventListener('click',async e=>{
+  const btn=e.target.closest('[data-action]');
+  if(!btn)return;
+  const action=btn.dataset.action;
+  try{
+    if(action==='close-detail'){detailDialog.close();return}
+    if(action==='claim')return await claimIssue();
+    if(action==='release')return await releaseIssue();
+    if(action==='toggle-label')return await toggleLabel(+btn.dataset.label);
+    if(action==='open-issue')return await openDetail(btn.dataset.ref);
+    if(action==='remove-dependency')return await removeDependency(+btn.dataset.depends);
+  }catch(err){notify(err.message)}
+});
+
+detailBody.addEventListener('change',async e=>{
+  const el=e.target.closest('[data-field]');
+  if(!el)return;
+  const field=el.dataset.field;
+  let value=el.value;
+  if(field==='assignee_id'||field==='milestone_id')value=value?+value:null;
+  try{await patchIssue({[field]:value})}catch{}
+});
+
+detailBody.addEventListener('submit',async e=>{
+  const form=e.target.closest('[data-form]');
+  if(!form)return;
+  e.preventDefault();
+  const kind=form.dataset.form;
+  try{
+    if(kind==='comment'){
+      const body=form.body.value.trim();
+      if(!body)return;
+      await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/comments`,{method:'POST',body:JSON.stringify({body})});
+    }else if(kind==='dependency'){
+      const dependsOn=+form.depends_on.value;
+      if(!dependsOn)return;
+      await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/dependencies`,{method:'POST',body:JSON.stringify({depends_on:dependsOn})});
+    }else if(kind==='gitlink'){
+      const ref=form.ref.value.trim();
+      if(!ref)return;
+      await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/git-links`,{method:'POST',body:JSON.stringify({kind:form.kind.value,ref,url:form.url.value.trim()||null})});
+    }
+    form.reset();
+    await refreshDetail();
+  }catch(err){notify(err.message)}
+});
+
+function setView(view){
+  currentView=view;
+  $$('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
+  ['board','activity'].forEach(v=>$('#'+v+'View').classList.toggle('hidden',v!==view));
+  pageTitle.textContent={board:'Board',activity:'Activity'}[view];
+  newIssueBtn.classList.toggle('hidden',view!=='board');
+}
+$$('.nav').forEach(btn=>btn.addEventListener('click',()=>setView(btn.dataset.view)));
+$$('[data-close]').forEach(b=>b.addEventListener('click',()=>$('#'+b.dataset.close).close()));
+
+loginForm.addEventListener('submit',async e=>{
+  e.preventDefault();
+  token=tokenInput.value.trim();
+  loginError.textContent='';
+  try{await loadAll();try{localStorage.setItem('localBoardToken',token)}catch{}}
+  catch(err){loginError.textContent=err.message}
+});
+refreshBtn.addEventListener('click',()=>reloadBoard().catch(e=>notify(e.message)));
+searchInput.addEventListener('input',()=>{renderStats();renderBoard()});
+milestoneFilter.addEventListener('change',()=>{renderStats();renderBoard()});
+assigneeFilter.addEventListener('change',()=>{renderStats();renderBoard()});
+
+newIssueBtn.addEventListener('click',()=>{
+  issueForm.reset();
+  issueError.textContent='';
+  issueMilestone.innerHTML=milestoneOptions(null);
+  issueLabelPicker.innerHTML=(data.board?.labels||[]).map(l=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:2px 10px 2px 0;font-size:12px;color:var(--muted)"><input type="checkbox" value="${l.id}">${esc(l.name)}</label>`).join('')||'<span class="muted">No labels configured</span>';
+  issueDialog.showModal();
+});
+issueForm.addEventListener('submit',async e=>{
+  e.preventDefault();
+  try{
+    const labels=[...issueLabelPicker.querySelectorAll('input:checked')].map(el=>+el.value);
+    const milestoneVal=issueMilestone.value;
+    await api('/api/issues',{method:'POST',body:JSON.stringify({title:issueTitle.value.trim(),description:issueDescription.value,priority:issuePriority.value,milestone_id:milestoneVal?+milestoneVal:null,labels})});
+    issueDialog.close();
+    notify('Issue created');
+    await reloadBoard();
+  }catch(err){issueError.textContent=err.message}
+});
+
+if(token){
+  loadAll().catch(()=>{try{localStorage.removeItem('localBoardToken')}catch{}login.classList.remove('hidden')});
+}
+</script>
+</body></html>
