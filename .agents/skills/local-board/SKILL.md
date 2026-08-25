@@ -44,7 +44,7 @@ If the issue carries the `review_required` label, move it to "In Review" instead
 
 ## Conflicts and errors
 
-A conflict error means another writer changed the issue since you last read it. The error names the current revision — re-read with `get_issue` and reconsider; never blindly retry a stale mutation.
+A conflict error means another writer changed the issue since you last read it. The error names the current revision — re-read with `get_issue` and reconsider; never blindly retry a stale mutation. `not_found` means the reference is wrong — rediscover it with `list_issues` (or the briefing's label/milestone lists) instead of guessing. A validation error names the offending field and suggests the fix — correct that one call; there is no need to re-fetch the tool catalog.
 
 ## Authentication
 
