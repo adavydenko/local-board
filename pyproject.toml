@@ -21,5 +21,11 @@ classifiers = [
 [project.scripts]
 local-board = "local_board.cli:main"
 
+# evals/ (local skill evaluations) and tests/ live at the top level but are not
+# distributable packages; declare the package list explicitly so setuptools'
+# flat-layout auto-discovery does not refuse the build.
+[tool.setuptools]
+packages = ["local_board"]
+
 [tool.setuptools.package-data]
 local_board = ["static/*", "templates/*"]
