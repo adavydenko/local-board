@@ -19,6 +19,16 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _schema_tables() -> set[str]:
+    """Every table the current schema creates, derived from the DDL itself."""
+    import re
+
+    from .db import SCHEMA_STATEMENTS
+
+    pattern = re.compile(r"CREATE TABLE IF NOT EXISTS (\w+)")
+    return {match.group(1) for statement in SCHEMA_STATEMENTS for match in pattern.finditer(statement)}
+
+
 def _validate(path: Path) -> None:
     if not path.is_file():
         raise ValueError(f"backup does not exist: {path}")
@@ -26,10 +36,11 @@ def _validate(path: Path) -> None:
         with sqlite3.connect(f"file:{path}?mode=ro", uri=True) as db:
             if db.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError("backup failed SQLite integrity_check")
-            required = {"actors", "issues", "activity", "board"}
+            required = _schema_tables()
             tables = {row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
             if not required <= tables:
-                raise ValueError("file is not a Local Board database")
+                missing = ", ".join(sorted(required - tables))
+                raise ValueError(f"file is not a Local Board database (missing tables: {missing})")
     except sqlite3.DatabaseError as exc:
         raise ValueError("backup is not a valid SQLite database") from exc
 

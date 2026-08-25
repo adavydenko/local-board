@@ -1,7 +1,7 @@
 interface:
   display_name: "Local Board"
-  short_description: "Coordinate repository work through Local Board MCP"
-  default_prompt: "Use $local-board to discover, claim, comment on, and complete repository issues through the configured Local Board MCP server."
+  short_description: "Plan and coordinate repository work through Local Board MCP"
+  default_prompt: "Use $local-board to plan work into milestones and issues, then discover, claim, comment on, review, and complete repository issues through the configured Local Board MCP server."
 dependencies:
   tools:
     - type: "mcp"

@@ -45,12 +45,16 @@ jobs:
       - name: Run non-browser test suite under coverage
         run: python -m coverage run --branch --source=local_board -m unittest discover -s tests -v
 
-      # Ratchet: raise the threshold as gaps close. cli.py is exercised through
-      # subprocess tests, which this in-process measurement undercounts.
+      # COVERAGE_FLOOR is a ratchet, not a target: the suite currently measures
+      # ~89% branch coverage, and the floor only guards against regressions.
+      # Raise it as gaps close. cli.py is exercised through subprocess tests,
+      # which this in-process measurement undercounts.
       - name: Enforce coverage floor
+        env:
+          COVERAGE_FLOOR: "75"
         run: |
           python -m coverage report -m --skip-empty
-          python -m coverage report --fail-under=75
+          python -m coverage report --fail-under="${COVERAGE_FLOOR}"
 
       - name: Compile Python sources
         run: python -m compileall -q local_board tests

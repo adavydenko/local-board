@@ -16,7 +16,7 @@ The conceptual client configuration in `examples/mcp-http.example.json` illustra
 
 ### CLI wrappers
 
-When driving MCP through a shell wrapper, pass JSON bodies via a temp file (`--args "$(cat args.json)"` or equivalent) rather than inline — Markdown comments with backticks and quotes do not survive shell quoting inline. `GET /health` is an unauthenticated liveness probe. `.local-board/state/server.json` is the running server's address/PID discovery file. A stale `server.json` — file present, PID dead — means the server died uncleanly; check `.local-board/state/server-crash.log`.
+Most MCP clients speak the protocol natively and need none of this. Some agent runtimes, however, drive MCP through generic shell tools (a `curl` wrapper or similar) — if yours does, pass JSON bodies via a temp file (`--args "$(cat args.json)"` or equivalent) rather than inline: Markdown comments with backticks and quotes do not survive shell quoting inline. `GET /health` is an unauthenticated liveness probe. `.local-board/state/server.json` is the running server's address/PID discovery file. A stale `server.json` — file present, PID dead — means the server died uncleanly; check `.local-board/state/server-crash.log`.
 
 ## Coordinator bootstrap
 
@@ -36,8 +36,11 @@ only read tools. Authorization is still enforced server-side for every call.
 
 ## Work lifecycle
 
-1. `initialize` already returns your identity and the board snapshot (prefix, statuses with
-   categories, labels, milestones, policy) in its `instructions` — no discovery calls are needed.
+1. The MCP protocol handshake (`initialize`) — performed automatically by your MCP client on
+   connect, unrelated to the operator's one-time `local-board init` — already returns your
+   identity and the board snapshot (prefix, statuses with categories, labels, milestones,
+   policy) in its `instructions`, so no discovery calls are needed. `whoami` remains available
+   to re-check identity mid-session.
 2. Find work with `list_issues`, filtered by the milestone, label, or issue list your planner or user
    gave you; read the full issue with `get_issue` before acting.
 3. Claim existing work with `claim_issue`, or create missing work with `create_issue` — put the

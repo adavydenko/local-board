@@ -22,7 +22,7 @@ class ConfigTest(unittest.TestCase):
     def _minimal_data():
         return {
             "schema_version": 2,
-            "board": {"prefix": "APP", "name": "Application"},
+            "project": {"prefix": "APP", "name": "Application"},
             "statuses": [
                 {"name": "Todo", "category": "unstarted"},
                 {"name": "Done", "category": "completed"},
@@ -34,18 +34,18 @@ class ConfigTest(unittest.TestCase):
     def test_default_config_is_valid(self):
         config = load_config(self.path)
         self.assertEqual(config.schema_version, 2)
-        self.assertEqual(config.board["prefix"], "APP")
-        self.assertEqual(config.board["name"], "Application")
+        self.assertEqual(config.project["prefix"], "APP")
+        self.assertEqual(config.project["name"], "Application")
 
-    def test_missing_board_table_is_rejected(self):
+    def test_missing_project_table_is_rejected(self):
         data = self._minimal_data()
-        del data["board"]
-        with self.assertRaisesRegex(ConfigError, r"\[board\]"):
+        del data["project"]
+        with self.assertRaisesRegex(ConfigError, r"\[project\]"):
             validate_config(data)
 
     def test_bad_prefix_is_rejected(self):
         data = self._minimal_data()
-        data["board"]["prefix"] = "a"
+        data["project"]["prefix"] = "a"
         with self.assertRaisesRegex(ConfigError, "prefix"):
             validate_config(data)
 

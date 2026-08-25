@@ -1,6 +1,6 @@
 schema_version = 2
 
-[board]
+[project]
 prefix = "LB"
 name = "Local Board"
 description = ""
@@ -37,7 +37,29 @@ category = "completed"
 name = "Canceled"
 category = "canceled"
 
+# Starter labels: working documentation of the label-over-issue-type model.
+# Rename, recolor, or remove them freely.
+[[labels]]
+key = "bug"
+name = "Bug"
+color = "#ef4444"
+
+[[labels]]
+key = "feature"
+name = "Feature"
+color = "#3b82f6"
+
+[[labels]]
+key = "chore"
+name = "Chore"
+color = "#64748b"
+
 [[labels]]
 key = "review_required"
 name = "Review required"
 color = "#f59e0b"
+
+[[labels]]
+key = "reviewed"
+name = "Reviewed"
+color = "#22c55e"

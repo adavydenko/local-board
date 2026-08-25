@@ -103,7 +103,7 @@ The UI uses stable issue routes such as `/api/issues/APP-12`. REST mutations hon
 ```toml
 schema_version = 2
 
-[board]
+[project]
 prefix = "APP"
 name = "Application"
 description = ""

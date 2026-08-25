@@ -29,8 +29,8 @@ class BoardConfig:
     digest: str
 
     @property
-    def board(self) -> dict[str, Any]:
-        return self.data["board"]
+    def project(self) -> dict[str, Any]:
+        return self.data["project"]
 
     @property
     def schema_version(self) -> int:
@@ -61,14 +61,14 @@ def validate_config(data: dict[str, Any]) -> None:
         raise ConfigError(
             f"unsupported config schema_version {version!r}; expected {CONFIG_SCHEMA_VERSION}"
         )
-    board = data.get("board")
-    if not isinstance(board, dict):
-        raise ConfigError("[board] is required")
-    prefix = board.get("prefix", "")
+    project = data.get("project")
+    if not isinstance(project, dict):
+        raise ConfigError("[project] is required")
+    prefix = project.get("prefix", "")
     if not isinstance(prefix, str) or not prefix.isalnum() or not 2 <= len(prefix) <= 10:
-        raise ConfigError("board.prefix must be 2-10 alphanumeric characters")
-    if not isinstance(board.get("name"), str) or not board["name"].strip():
-        raise ConfigError("board.name is required")
+        raise ConfigError("project.prefix must be 2-10 alphanumeric characters")
+    if not isinstance(project.get("name"), str) or not project["name"].strip():
+        raise ConfigError("project.name is required")
 
     defaults = data.get("defaults", {})
     if not isinstance(defaults, dict):
@@ -125,12 +125,12 @@ def validate_config(data: dict[str, Any]) -> None:
         milestone_keys.add(milestone["key"])
 
 
-def default_config(board_name: str, prefix: str) -> str:
+def default_config(project_name: str, prefix: str) -> str:
     return f'''schema_version = 2
 
-[board]
+[project]
 prefix = "{prefix}"
-name = "{board_name}"
+name = "{project_name}"
 description = ""
 
 [defaults]
@@ -165,10 +165,32 @@ category = "completed"
 name = "Canceled"
 category = "canceled"
 
+# Starter labels: working documentation of the label-over-issue-type model.
+# Rename, recolor, or remove them freely.
+[[labels]]
+key = "bug"
+name = "Bug"
+color = "#ef4444"
+
+[[labels]]
+key = "feature"
+name = "Feature"
+color = "#3b82f6"
+
+[[labels]]
+key = "chore"
+name = "Chore"
+color = "#64748b"
+
 [[labels]]
 key = "review_required"
 name = "Review required"
 color = "#f59e0b"
+
+[[labels]]
+key = "reviewed"
+name = "Reviewed"
+color = "#22c55e"
 '''
 
 
@@ -185,9 +207,9 @@ class ConfigService:
         actions: list[dict[str, Any]] = []
         current = db.execute("SELECT * FROM board WHERE id=1").fetchone()
         desired_board = (
-            config.board["prefix"].upper(),
-            config.board["name"],
-            config.board.get("description", ""),
+            config.project["prefix"].upper(),
+            config.project["name"],
+            config.project.get("description", ""),
         )
         if not current:
             actions.append({"action": "create", "entity": "board", "key": desired_board[0]})
@@ -243,9 +265,9 @@ class ConfigService:
             if not plan["changed"]:
                 return {**plan, "applied": False}
             self.board.configure_board(
-                config.board["prefix"],
-                config.board["name"],
-                config.board.get("description", ""),
+                config.project["prefix"],
+                config.project["name"],
+                config.project.get("description", ""),
                 defaults=config.data.get("defaults", {}),
                 agent_policy=config.data.get("agent_policy", {}),
                 config_digest=config.digest,

@@ -24,9 +24,13 @@ SCHEMA_STATEMENTS = [
         prefix TEXT NOT NULL,
         name TEXT NOT NULL,
         description TEXT NOT NULL DEFAULT '',
+        -- Allocator for public issue numbers (APP-12): SQLite has no sequences,
+        -- and MAX(number)+1 would recycle a number after an admin deletion.
         next_issue_number INTEGER NOT NULL DEFAULT 1,
         defaults_json TEXT NOT NULL DEFAULT '{}',
         agent_policy_json TEXT NOT NULL DEFAULT '{}',
+        -- sha256 of the applied project.toml; doctor compares it against the
+        -- file on disk to detect unapplied configuration drift.
         config_digest TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -44,6 +48,8 @@ SCHEMA_STATEMENTS = [
         name TEXT NOT NULL UNIQUE,
         category TEXT NOT NULL CHECK(category IN ('backlog','unstarted','started','completed','canceled')),
         position INTEGER NOT NULL DEFAULT 0,
+        -- 'config' rows are reconciled from project.toml; 'manual' rows were
+        -- created ad hoc. Doctor uses this to report drift precisely.
         managed_by TEXT NOT NULL DEFAULT 'manual'
     )""",
     """CREATE TABLE IF NOT EXISTS milestones (
@@ -72,8 +78,13 @@ SCHEMA_STATEMENTS = [
         assignee_id INTEGER REFERENCES actors(id) ON DELETE SET NULL,
         milestone_id INTEGER REFERENCES milestones(id) ON DELETE SET NULL,
         parent_id INTEGER REFERENCES issues(id) ON DELETE SET NULL,
+        -- Ordering inside a status column (kanban order), fed by state_counters.
         position REAL NOT NULL DEFAULT 0,
         revision INTEGER NOT NULL DEFAULT 1,
+        -- The claim lease. assignee_id doubles as the lease holder: claiming
+        -- sets the assignee, so a separate claimed_by column would only drift.
+        -- Datetimes are ISO-8601 UTC TEXT throughout: SQLite has no datetime
+        -- type, and ISO text sorts correctly and stays human-readable.
         claimed_at TEXT,
         claim_expires_at TEXT,
         created_by INTEGER NOT NULL REFERENCES actors(id),
@@ -108,6 +119,8 @@ SCHEMA_STATEMENTS = [
         created_at TEXT NOT NULL,
         UNIQUE(issue_id,kind,ref)
     )""",
+    # The audit journal and the status history: every status change, claim,
+    # release, and edit lands here as an append-only row.
     """CREATE TABLE IF NOT EXISTS activity (
         id INTEGER PRIMARY KEY,
         actor_id INTEGER REFERENCES actors(id) ON DELETE RESTRICT,
@@ -117,6 +130,9 @@ SCHEMA_STATEMENTS = [
         data_json TEXT NOT NULL DEFAULT '{}',
         created_at TEXT NOT NULL
     )""",
+    # Per-status allocator for issues.position: appending to a column takes the
+    # next integer instead of scanning MAX(position), keeping appends O(1) and
+    # race-free inside the write transaction.
     """CREATE TABLE IF NOT EXISTS state_counters (
         status TEXT PRIMARY KEY,
         next_position INTEGER NOT NULL DEFAULT 1
@@ -259,7 +275,14 @@ class Board:
         self._enable_wal()
 
     def _enable_wal(self) -> None:
-        """Switch to WAL with bounded retries; concurrent initializers all attempt this."""
+        """Switch to WAL with bounded retries; concurrent initializers all attempt this.
+
+        WAL (write-ahead logging) appends changes to a side log instead of
+        rewriting pages in place, so readers never block the writer and vice
+        versa — the property that lets the server answer reads while a write
+        transaction is open. The switch itself needs an exclusive lock, hence
+        the retry: whichever process wins converts the database for everyone.
+        """
         db = self._open_connection()
         try:
             try:
