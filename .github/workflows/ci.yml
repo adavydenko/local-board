@@ -35,8 +35,13 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # coverage and mcp are CI-only dev tools; the package itself stays
+      # dependency-free. The official `mcp` SDK powers the protocol-conformance
+      # suite (tests/integration/test_mcp_conformance.py), which drives our
+      # hand-rolled MCP server with a real spec-tracking client and guards the
+      # build-vs-buy decision from PR #25; without it installed those tests skip.
       - name: Install package
-        run: python -m pip install . coverage
+        run: python -m pip install . coverage mcp
 
       # Browser automation is not part of this unittest tree. This discovery
       # command runs every current unit, integration, HTTP/e2e, concurrency,
