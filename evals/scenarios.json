@@ -1,0 +1,73 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "key": "claim-and-complete",
+      "title": "Claim an open issue, work it, complete it",
+      "seed": [
+        {"title": "Add a health endpoint", "description": "Acceptance:\n- [ ] endpoint returns 200\n- [ ] documented", "status": "Todo"}
+      ],
+      "prompt": "You are working on this repository's board. Take the open issue {I1}, do what its work loop requires on the board (you do not need to write any code - treat the work itself as done), and complete it properly.",
+      "assertions": [
+        {"kind": "issue_category", "issue": 1, "equals": "completed"},
+        {"kind": "assignee_is_agent", "issue": 1},
+        {"kind": "lease_cleared", "issue": 1},
+        {"kind": "comment_count_min", "issue": 1, "min": 1},
+        {"kind": "activity_action", "issue": 1, "action": "claimed"}
+      ]
+    },
+    {
+      "key": "takeover-expired-lease",
+      "title": "Take over an issue whose previous claim expired",
+      "seed": [
+        {"title": "Migrate settings loader", "status": "In Progress", "claim": "expired-other"}
+      ],
+      "prompt": "Issue {I1} was being worked on by another agent whose claim has expired and who is not coming back. Take the issue over on the board and complete it (treat the remaining work itself as done).",
+      "assertions": [
+        {"kind": "assignee_is_agent", "issue": 1},
+        {"kind": "issue_category", "issue": 1, "equals": "completed"},
+        {"kind": "activity_action", "issue": 1, "action": "claimed"}
+      ]
+    },
+    {
+      "key": "abandon-with-justification",
+      "title": "Abandon infeasible work the way the skill prescribes",
+      "seed": [
+        {"title": "Cache layer via left-handed quines", "description": "Implement caching using the approach described here.", "status": "Todo"}
+      ],
+      "prompt": "Start working on issue {I1}. Upon inspection you conclude the approach described in it cannot be implemented as written. Abandon the work on the board the proper way so the next team member understands what happened.",
+      "assertions": [
+        {"kind": "comment_count_min", "issue": 1, "min": 1},
+        {"kind": "unassigned", "issue": 1},
+        {"kind": "activity_action", "issue": 1, "action": "released"}
+      ]
+    },
+    {
+      "key": "review-convention",
+      "title": "Finish work on a review_required issue per the review convention",
+      "seed": [
+        {"title": "Rework token rotation", "status": "In Progress", "labels": ["review_required"], "claim": "agent"}
+      ],
+      "prompt": "You have finished implementing issue {I1} (treat the implementation as done). Wrap it up on the board following this project's review convention.",
+      "assertions": [
+        {"kind": "issue_status", "issue": 1, "equals": "In Review"},
+        {"kind": "label_present", "issue": 1, "key": "review_required"},
+        {"kind": "comment_count_min", "issue": 1, "min": 1}
+      ]
+    },
+    {
+      "key": "regression-reopen",
+      "title": "React to a regression traced to a completed issue",
+      "seed": [
+        {"title": "Normalize config digests", "status": "Done"}
+      ],
+      "prompt": "A regression in production was traced to the change delivered under issue {I1}: config digests are computed differently on Windows. Handle this on the board appropriately.",
+      "assertions": [
+        {"kind": "any_of", "of": [
+          {"kind": "issue_category", "issue": 1, "not_equals": "completed"},
+          {"kind": "new_issue_created", "beyond_seed": true}
+        ]}
+      ]
+    }
+  ]
+}
