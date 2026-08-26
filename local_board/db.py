@@ -32,6 +32,10 @@ SCHEMA_STATEMENTS = [
         -- sha256 of the applied project.toml; doctor compares it against the
         -- file on disk to detect unapplied configuration drift.
         config_digest TEXT,
+        -- Prefixes this project used before renames. Identifiers are derived
+        -- (prefix + number), so textual references like "APP-12" written into
+        -- comments before a rename keep resolving through this list.
+        former_prefixes_json TEXT NOT NULL DEFAULT '[]',
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
     )""",
@@ -422,6 +426,12 @@ class Board:
                     defaults=defaults, agent_policy=agent_policy, config_digest=config_digest, db=conn,
                 )
         stamp = now()
+        current = db.execute("SELECT prefix, former_prefixes_json FROM board WHERE id=1").fetchone()
+        former: list[str] = json.loads(current["former_prefixes_json"]) if current else []
+        if current and current["prefix"] != prefix and current["prefix"] not in former:
+            # Remember the outgoing prefix so old textual references keep resolving.
+            former.append(current["prefix"])
+        former = [item for item in former if item != prefix]
         db.execute(
             "INSERT INTO board(id,prefix,name,description,defaults_json,agent_policy_json,config_digest,"
             "created_at,updated_at) VALUES(1,?,?,?,?,?,?,?,?) "
@@ -435,6 +445,7 @@ class Board:
                 stamp, stamp,
             ),
         )
+        db.execute("UPDATE board SET former_prefixes_json=? WHERE id=1", (json.dumps(former),))
         return self.get_board(db)
 
     def get_board(self, db: sqlite3.Connection | None = None) -> dict[str, Any]:
@@ -447,6 +458,7 @@ class Board:
         result = dict(row)
         result["defaults"] = json.loads(result.pop("defaults_json"))
         result["agent_policy"] = json.loads(result.pop("agent_policy_json"))
+        result["former_prefixes"] = json.loads(result.pop("former_prefixes_json"))
         return result
 
     def board_context(self) -> dict[str, Any]:
@@ -627,7 +639,9 @@ class Board:
             except (ValueError, AttributeError) as exc:
                 raise ValueError("issue identifier must look like APP-12") from exc
             board = self.get_board(db)
-            if prefix != board["prefix"]:
+            # Former prefixes stay valid so references written before a rename
+            # (in comments, descriptions, branch names) keep resolving.
+            if prefix != board["prefix"] and prefix not in board.get("former_prefixes", []):
                 raise KeyError("issue not found")
             row = db.execute("SELECT id FROM issues WHERE number=?", (number,)).fetchone()
         if not row:

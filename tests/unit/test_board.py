@@ -33,6 +33,22 @@ class BoardTest(unittest.TestCase):
         with self.assertRaises(KeyError):
             self.board.resolve_issue("WRONG-1")
 
+    def test_former_prefixes_keep_old_references_resolving_after_rename(self):
+        issue = self.board.create_issue(self.admin["id"], "Renamed later")
+        self.board.configure_board("NEW", "App")
+        self.assertEqual(self.board.get_board()["former_prefixes"], ["APP"])
+        self.assertEqual(self.board.get_issue(issue["id"])["identifier"], "NEW-1")
+        # Textual references written before the rename still resolve...
+        self.assertEqual(self.board.resolve_issue("APP-1"), issue["id"])
+        self.assertEqual(self.board.resolve_issue("NEW-1"), issue["id"])
+        # ...while foreign prefixes are still rejected.
+        with self.assertRaises(KeyError):
+            self.board.resolve_issue("WRONG-1")
+        # Renaming back retires NEW into the list and reinstates APP as current.
+        self.board.configure_board("APP", "App")
+        self.assertEqual(self.board.get_board()["former_prefixes"], ["NEW"])
+        self.assertEqual(self.board.resolve_issue("NEW-1"), issue["id"])
+
     # -- transitions and start policy --------------------------------------------
 
     def test_update_issue_allows_free_transition_to_any_status(self):
