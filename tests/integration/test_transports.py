@@ -18,7 +18,9 @@ except Exception as exc:  # pragma: no cover - only hit while mcp.py is mid-rewr
     MCP_IMPORT_ERROR = exc
 
 
-class HttpIntegrationTest(unittest.TestCase):
+class _HttpHarness(unittest.TestCase):
+    """Shared live-server fixture; test classes below add their own cases."""
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.board = Board(Path(self.tmp.name) / "board.db")
@@ -46,6 +48,7 @@ class HttpIntegrationTest(unittest.TestCase):
             raw = response.read()
             return response.status, (json.loads(raw) if raw else None)
 
+class HttpIntegrationTest(_HttpHarness):
     @unittest.skipIf(MCP_IMPORT_ERROR is not None, f"local_board.mcp not importable: {MCP_IMPORT_ERROR}")
     def test_mcp_over_http_happy_path(self):
         status, initialized = self.request("/mcp", body={
@@ -118,3 +121,41 @@ class HttpIntegrationTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DnsRebindingGuardTest(_HttpHarness):
+    """The Host/Origin guard: local requests pass, rebinding shapes get 403."""
+
+    def _raw(self, *, host=None, origin=None, method="GET", path="/health"):
+        headers = {"Accept": "application/json, text/event-stream"}
+        if host:
+            headers["Host"] = host
+        if origin:
+            headers["Origin"] = origin
+        request = Request(self.url + path, headers=headers, method=method)
+        with urlopen(request, timeout=3) as response:
+            return response.status
+
+    def test_local_host_without_origin_passes(self):
+        self.assertEqual(self._raw(), 200)
+
+    def test_local_origin_passes(self):
+        self.assertEqual(self._raw(origin=self.url), 200)
+        self.assertEqual(self._raw(origin="http://localhost:9999"), 200)
+
+    def test_foreign_host_is_rejected(self):
+        with self.assertRaises(HTTPError) as caught:
+            self._raw(host="evil.example:8765")
+        self.assertEqual(caught.exception.code, 403)
+
+    def test_foreign_origin_is_rejected_on_reads_and_writes(self):
+        for method, path in (("GET", "/health"), ("POST", "/mcp"), ("PATCH", "/api/issues/APP-1"),
+                             ("DELETE", "/api/labels/1")):
+            with self.assertRaises(HTTPError) as caught:
+                self._raw(origin="https://evil.example", method=method, path=path)
+            self.assertEqual(caught.exception.code, 403, f"{method} {path}")
+
+    def test_null_origin_is_rejected(self):
+        with self.assertRaises(HTTPError) as caught:
+            self._raw(origin="null")
+        self.assertEqual(caught.exception.code, 403)

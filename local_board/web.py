@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
 from . import __version__
 from .db import Board
@@ -24,12 +24,31 @@ from .errors import describe
 
 MAX_BODY_BYTES = 1_000_000
 
+# The DNS-rebinding guard: a malicious page can point its own domain at
+# 127.0.0.1 and reach a loopback server from the victim's browser, carrying
+# Host (and on cross-site requests Origin) of the attacker's domain. Every
+# request must therefore present a local Host, and an Origin — when a browser
+# sends one — must be local too. Non-browser clients (MCP SDKs, curl) send no
+# Origin and pass untouched. The MCP spec requires this check for local servers.
+LOCAL_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _hostname(value: str | None) -> str | None:
+    """Hostname part of a Host header value ('127.0.0.1:8765', '[::1]:8765')."""
+    if not value:
+        return None
+    value = value.strip()
+    if value.startswith("["):
+        return value[1 : value.find("]")].lower() if "]" in value else None
+    return value.rsplit(":", 1)[0].lower() if ":" in value else value.lower()
+
 
 class _TooLarge(Exception):
     """Raised internally when a request body exceeds MAX_BODY_BYTES."""
 
 
-def make_handler(board: Board):
+def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
+    allowed = LOCAL_HOSTNAMES | (allowed_hosts or frozenset())
     class Handler(BaseHTTPRequestHandler):
         server_version = "LocalBoard/0.1"
         protocol_version = "HTTP/1.1"
@@ -67,6 +86,23 @@ def make_handler(board: Board):
 
         # -- request helpers ---------------------------------------------------------
 
+        def _local_request(self) -> bool:
+            """Reject DNS-rebinding shapes: non-local Host, or a non-local Origin."""
+            host = _hostname(self.headers.get("Host"))
+            origin_header = self.headers.get("Origin")
+            origin = urlsplit(origin_header).hostname if origin_header else None
+            if host in allowed and (origin_header is None or origin in allowed):
+                return True
+            self.close_connection = True
+            self._json(HTTPStatus.FORBIDDEN, {
+                "error": {
+                    "code": "forbidden",
+                    "message": "request must originate from this machine (Host/Origin check failed)",
+                    "retryable": False,
+                },
+            })
+            return False
+
         def _actor(self):
             header = self.headers.get("Authorization", "")
             return board.authenticate(header[7:]) if header.startswith("Bearer ") else None
@@ -100,6 +136,8 @@ def make_handler(board: Board):
         # -- GET ----------------------------------------------------------------------
 
         def do_GET(self):
+            if not self._local_request():
+                return
             parts, query = self._route()
             if parts == ["health"]:
                 try:
@@ -149,6 +187,8 @@ def make_handler(board: Board):
         # -- POST ---------------------------------------------------------------------
 
         def do_POST(self):
+            if not self._local_request():
+                return
             actor = self._require_actor()
             if actor is None:
                 return
@@ -222,6 +262,8 @@ def make_handler(board: Board):
         # -- PATCH ----------------------------------------------------------------------
 
         def do_PATCH(self):
+            if not self._local_request():
+                return
             actor = self._require_actor()
             if actor is None:
                 return
@@ -257,6 +299,8 @@ def make_handler(board: Board):
         # -- DELETE -----------------------------------------------------------------
 
         def do_DELETE(self):
+            if not self._local_request():
+                return
             actor = self._require_actor()
             if actor is None:
                 return
@@ -297,7 +341,7 @@ def make_handler(board: Board):
 
 
 def serve(board: Board, host: str = "127.0.0.1", port: int = 8765) -> None:
-    server = ThreadingHTTPServer((host, port), make_handler(board))
+    server = ThreadingHTTPServer((host, port), make_handler(board, allowed_hosts=frozenset({host.lower()})))
     actual_port = server.server_port
     board.path.parent.mkdir(parents=True, exist_ok=True)
     # Fatal signals (segfault, unraisable deadlock dumps) land here, so an unclean
