@@ -287,6 +287,35 @@ TOOLS_ADMIN = [
          ["actor", "role"]),
 ]
 
+# Annotations for the generated cheat-sheet (references/tools.md, rendered by
+# onboarding.render_tools_reference from this catalog — the single source both
+# tools/list and the skill reference are built from). They are kept out of the
+# tool dicts so tools/list serves exactly the MCP schema and nothing more.
+# "+" advances the issue's revision, "=" leaves it unchanged; read tools and
+# board-level tools carry no marker.
+TOOL_REV = {
+    "create_issue": "+",
+    "update_issue": "+",
+    "claim_issue": "+",
+    "release_issue": "+",
+    "add_comment": "=",
+    "update_comment": "=",
+    "add_dependency": "=",
+    "remove_dependency": "=",
+    "add_git_link": "=",
+}
+
+TOOL_NOTES = {
+    "list_activity": "`issue` accepts an APP-12 identifier",
+    "get_issue": 'comments: "all" (default) | "none" | N for the last N; response always carries `comments_total`',
+    "create_issue": "new issue",
+    "add_comment": "returns `comment_id` and `issue_revision`; full body only with the flag",
+    "add_git_link": (
+        "pass `ref` or `refs`; kind: commit (default) | pr | mr; returns the created link(s) with their ids. "
+        "Branches are not linked: the issue id in the branch name is the association, inside git itself"
+    ),
+}
+
 READ_TOOLS = {item["name"] for item in TOOLS_READ}
 WRITE_TOOLS = {item["name"] for item in TOOLS_WRITE}
 CORRECTION_TOOLS = {item["name"] for item in TOOLS_CORRECTION}

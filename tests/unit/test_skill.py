@@ -19,6 +19,20 @@ class SkillTest(unittest.TestCase):
         skill = (TEMPLATES_DIR / "local-board-skill.md").read_text()
         self.assertTrue(skill.startswith("---\nname: local-board\ndescription:"))
 
+    def test_tools_reference_is_generated_and_current(self):
+        """The tracked cheat-sheet must byte-match the catalog-derived render: no second brain."""
+        from local_board.onboarding import render_tools_reference
+
+        tracked = (ROOT / ".agents/skills/local-board/references/tools.md").read_text(encoding="utf-8")
+        self.assertEqual(tracked, render_tools_reference())
+
+    def test_tool_annotations_reference_real_tools(self):
+        from local_board import mcp
+
+        catalog = {item["name"] for item in mcp.TOOLS_READ + mcp.TOOLS_WRITE + mcp.TOOLS_CORRECTION + mcp.TOOLS_ADMIN}
+        for name in (*mcp.TOOL_REV, *mcp.TOOL_NOTES):
+            self.assertIn(name, catalog, f"annotation for unknown tool {name}")
+
 
 if __name__ == "__main__":
     unittest.main()
