@@ -20,7 +20,7 @@ Your MCP client performs the MCP protocol handshake (`initialize`) automatically
 5. Work. Add short `add_comment` entries for decisions, material progress, and handoffs. Material newly discovered work gets its own issue — do not silently expand this one's scope.
 6. When the work is finished — acceptance checkboxes checked, or a comment explaining the ones that are not — call `update_issue` with the latest `revision` to move the issue to a completed-category status (e.g. `Done`). When abandoning or handing off unfinished work, first `add_comment` why — what blocked you, what you learned, what remains — and set any label or status that helps the next agent, then call `release_issue`.
 
-Statuses have fixed categories (backlog/unstarted/started/completed/canceled) but configurable names, and transitions between them are free — the server allows any move, even Backlog straight to Done. Free transitions are what makes mistakes correctable; the expected path for real work is the loop above.
+Statuses have fixed categories with a normative direction — backlog → unstarted → started → completed, with canceled reachable from anywhere — and configurable names. That ordering is the expected path: real work marches forward along it through the loop above. Transitions are nevertheless free: the server allows any move, including backward ones like completed → unstarted when reopening after a regression, or a triage shortcut straight from Backlog to Done. This is not anarchy — it is deliberate flexibility, so corrections and reopens never need an admin override, and every move lands in the activity journal either way.
 
 ## Checklists and structure
 
