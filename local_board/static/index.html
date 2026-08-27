@@ -514,6 +514,8 @@ async function reloadBoard(){
 }
 
 function statusesSorted(){return [...(data.board?.statuses||[])].sort((a,b)=>a.position-b.position)}
+function statusCategory(name){return statusesSorted().find(status=>status.name===name)?.category||''}
+function defaultNewIssueAssignee(status){return statusCategory(status)==='started'?identity?.id:null}
 function findIssueRef(id){return (data.issues||[]).find(issue=>issue.id===id)}
 function milestoneName(id){return (data.board?.milestones||[]).find(item=>item.id===id)?.name||''}
 function labelCatalog(name){return (data.board?.labels||[]).find(label=>label.name===name||label.key===name)}
@@ -793,7 +795,7 @@ async function handlePropertyChange(event){
 
 function openNewIssue(status=''){
   if(!canWrite())return;
-  issueForm.reset();issueError.textContent='';issueMilestone.innerHTML=milestoneOptions(null);issueAssignee.innerHTML=actorOptions(null);
+  issueForm.reset();issueError.textContent='';issueMilestone.innerHTML=milestoneOptions(null);issueAssignee.innerHTML=actorOptions(defaultNewIssueAssignee(status));
   issueLabelPicker.innerHTML=(data.board?.labels||[]).map(label=>`<label class="label-choice"><input type="checkbox" value="${label.id}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</label>`).join('')||'<span class="muted">No labels configured</span>';
   issueDialog.dataset.status=status;newIssueHeading.textContent=status?`Create issue in ${status}`:'Create issue';issueDialog.showModal();requestAnimationFrame(()=>issueTitle.focus());
 }

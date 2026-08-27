@@ -50,6 +50,14 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn('id="issueAssignee"', self.html)
         self.assertIn('assignee_id:assignee?+assignee:null', self.html)
 
+    def test_new_issue_in_started_status_defaults_to_current_actor(self):
+        self.assertIn("function defaultNewIssueAssignee(status)", self.html)
+        self.assertIn("statusCategory(status)==='started'?identity?.id:null", self.html)
+        self.assertIn(
+            "issueAssignee.innerHTML=actorOptions(defaultNewIssueAssignee(status))",
+            self.html,
+        )
+
     def test_initial_restore_does_not_steal_focus_from_the_skip_link(self):
         self.assertIn("{updateHistory:false,focusContent:false}", self.html)
 
