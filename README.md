@@ -67,6 +67,19 @@ local-board serve
 
 `init` creates `.local-board/project.toml`, applies it to SQLite, and adds runtime-only paths to the target repository's `.gitignore`. Open <http://127.0.0.1:8765> and enter an actor token.
 
+## Command line
+
+`local-board` with no arguments prints a grouped overview rather than a usage error; `local-board help <command>` and `local-board <command> --help` print the same per-command page. Four conventions hold across every command:
+
+| Convention | Detail |
+| --- | --- |
+| Global options | `--db`, `--config`, `--json`, and `--color` are accepted before or after the command name. |
+| `--json` everywhere | Every command that prints something prints JSON under `--json`, errors included. Colour is switched off automatically. |
+| Colour | Auto-detected from the terminal; `--color auto\|always\|never`, `NO_COLOR`, and `FORCE_COLOR` are honoured. |
+| Exit codes | `0` success, `1` the command failed, `2` the invocation was wrong. |
+
+Failures print an `error:` line followed by a `hint:` naming the next command to run, and unknown commands suggest the closest match. Environment fallbacks: `LOCAL_BOARD_DB`, `LOCAL_BOARD_CONFIG`, `LOCAL_BOARD_TOKEN`, and `LOCAL_BOARD_DEBUG` (re-raise internal errors with a traceback).
+
 ## Connect an MCP agent
 
 Start one server for the repository and configure every agent to use its HTTP MCP endpoint:

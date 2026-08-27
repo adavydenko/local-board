@@ -14,7 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
-from . import __version__
+from . import __version__, ui
 from .db import Board
 from .errors import describe
 
@@ -355,11 +355,21 @@ def serve(board: Board, host: str = "127.0.0.1", port: int = 8765) -> None:
         "started_at": datetime.now(UTC).isoformat(),
     }
     discovery_path.write_text(json.dumps(discovery), encoding="utf-8")
-    print(f"Local Board: started at http://{host}:{actual_port} (pid {os.getpid()})", file=sys.stderr)
+    # The banner goes to stderr so `local-board serve > log` keeps stdout clean.
+    base = f"http://{host}:{actual_port}"
+    ui.heading(f"Local Board {__version__}", stream=sys.stderr)
+    print(file=sys.stderr)
+    ui.fields(
+        [("Web UI", base), ("MCP", f"{base}/mcp"), ("Database", str(board.path)),
+         ("PID", str(os.getpid()))],
+        stream=sys.stderr,
+    )
+    print(file=sys.stderr)
+    print(ui.theme.dim("Press Ctrl+C to stop"), file=sys.stderr)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("Local Board: stopped (keyboard interrupt)", file=sys.stderr)
+        print(ui.theme.dim("\nLocal Board stopped"), file=sys.stderr)
     finally:
         discovery_path.unlink(missing_ok=True)
         crash_log.close()

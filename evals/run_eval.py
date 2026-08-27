@@ -70,7 +70,7 @@ def scaffold_repo(workdir: Path, *, baseline: bool) -> None:
     env = {**os.environ, "PYTHONPATH": str(REPO_ROOT) + os.pathsep + os.environ.get("PYTHONPATH", "")}
     subprocess.run(
         [sys.executable, "-c",
-         "import sys; sys.argv=['local-board','init']; from local_board.cli import main; main()"],
+         "import sys; sys.argv=['local-board','init']; from local_board.cli import main; sys.exit(main())"],
         cwd=workdir, check=True, capture_output=True, text=True, env=env,
     )
     if baseline:

@@ -38,7 +38,7 @@ Run one `local-board serve` process for the common Git repository. All local wor
 
 ## Recovery boundary
 
-Use `local-board backup [path]` to create a consistent online snapshot and checksum manifest. Do not treat a plain filesystem copy of `board.db` during active WAL writes as a valid backup.
+Use `local-board backup [path]` to create a consistent online snapshot and checksum manifest. Do not treat a plain filesystem copy of `board.db` during active WAL writes as a valid backup. The command prints a human-readable summary; pass `--json` to capture the manifest on stdout for a script.
 
 Stop `local-board serve` before restoring, then run:
 
