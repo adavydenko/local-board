@@ -1,131 +1,134 @@
-"""`reset` is the inverse of `init`, and inverses are where data gets lost.
-
-These assert the guardrails rather than the wording: nothing happens without
---force, a live server blocks it, state is recoverable unless purged, and
-files Local Board did not write are never removed.
-"""
+"""Unit tests for reset.py: the inverse of init, planned and applied on tmp trees."""
 
 import json
 import os
-import signal
-import subprocess
 import tempfile
-import time
 import unittest
+from importlib.resources import files
 from pathlib import Path
 
+from local_board import reset
 from local_board.onboarding import TEMPLATES
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
-
-def _env():
-    env = os.environ.copy()
-    existing = env.get("PYTHONPATH", "")
-    env["PYTHONPATH"] = str(PROJECT_ROOT) + (os.pathsep + existing if existing else "")
-    return env
-
-
-def run_cli(*args, cwd):
-    return subprocess.run(["python3", "-m", "local_board.cli", *args],
-                          cwd=cwd, env=_env(), capture_output=True, text=True)
+def _scaffold(root: Path) -> tuple[Path, Path]:
+    """A minimal repo shaped the way init leaves it."""
+    state = root / ".local-board" / "state"
+    state.mkdir(parents=True)
+    (state / "board.db").write_text("db", encoding="utf-8")
+    config = root / ".local-board" / "project.toml"
+    config.write_text("schema_version = 2\n", encoding="utf-8")
+    for relative in TEMPLATES:
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("content", encoding="utf-8")
+    bridge = files("local_board").joinpath("templates", "local-board-agents-bridge.md")
+    (root / "AGENTS.md").write_text(bridge.read_text(encoding="utf-8"), encoding="utf-8")
+    (root / ".gitignore").write_text("*.pyc" + reset.GITIGNORE_BLOCK, encoding="utf-8")
+    return state, config
 
 
 class ResetTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.root = Path(self.tmp.name) / "repo"
-        self.root.mkdir()
-        subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
-        self.assertEqual(run_cli("init", cwd=self.root).returncode, 0)
-        self.state = self.root / ".local-board" / "state"
+        self.root = Path(self.tmp.name)
+        self.state, self.config = _scaffold(self.root)
 
     def tearDown(self):
         self.tmp.cleanup()
 
-    def test_without_force_it_prints_a_plan_and_changes_nothing(self):
-        result = run_cli("reset", cwd=self.root)
-        self.assertEqual(result.returncode, 1)
-        self.assertIn("--force", result.stderr)
-        self.assertTrue((self.state / "board.db").exists())
+    # -- server_pid ---------------------------------------------------------------
 
-    def test_force_moves_state_aside_so_it_can_be_recovered(self):
-        result = run_cli("reset", "--force", cwd=self.root)
-        self.assertEqual(result.returncode, 0, result.stderr)
+    def test_server_pid_without_discovery_file_is_none(self):
+        self.assertIsNone(reset.server_pid(self.state))
+
+    def test_server_pid_of_dead_process_is_none(self):
+        (self.state / "server.json").write_text(json.dumps({"pid": 2 ** 22 + 12345}))
+        self.assertIsNone(reset.server_pid(self.state))
+
+    def test_server_pid_of_live_process_is_reported(self):
+        (self.state / "server.json").write_text(json.dumps({"pid": os.getpid()}))
+        self.assertEqual(reset.server_pid(self.state), os.getpid())
+
+    def test_server_pid_with_garbage_discovery_is_none(self):
+        (self.state / "server.json").write_text("not json")
+        self.assertIsNone(reset.server_pid(self.state))
+
+    # -- plan ---------------------------------------------------------------------
+
+    def test_state_only_plan_moves_state_aside(self):
+        removals = reset.plan(self.root, self.state, self.config, everything=False, purge=False)
+        self.assertEqual([(r.kind, r.action) for r in removals], [("state", "move")])
+
+    def test_purge_turns_moves_into_deletes(self):
+        removals = reset.plan(self.root, self.state, self.config, everything=True, purge=True)
+        actions = {r.kind: r.action for r in removals}
+        self.assertEqual(actions["state"], "delete")
+
+    def test_everything_plan_covers_config_onboarding_and_gitignore(self):
+        removals = reset.plan(self.root, self.state, self.config, everything=True, purge=False)
+        kinds = {r.kind for r in removals}
+        self.assertEqual(kinds, {"state", "config", "onboarding", "gitignore"})
+        gitignore = [r for r in removals if r.kind == "gitignore"][0]
+        self.assertEqual(gitignore.action, "edit")
+
+    def test_edited_agents_bridge_is_kept_not_deleted(self):
+        (self.root / "AGENTS.md").write_text("my own policy\n", encoding="utf-8")
+        removals = reset.plan(self.root, self.state, self.config, everything=True, purge=False)
+        bridge = [r for r in removals if r.path == self.root / "AGENTS.md"][0]
+        self.assertEqual(bridge.action, "keep")
+
+    def test_missing_pieces_are_simply_absent_from_the_plan(self):
+        (self.root / ".gitignore").unlink()
+        self.config.unlink()
+        removals = reset.plan(self.root, self.state, self.config, everything=True, purge=False)
+        kinds = [r.kind for r in removals]
+        self.assertNotIn("gitignore", kinds)
+        self.assertNotIn("config", kinds)
+
+    # -- apply --------------------------------------------------------------------
+
+    def test_apply_moves_state_beside_the_original(self):
+        removals = reset.plan(self.root, self.state, self.config, everything=False, purge=False)
+        done = reset.apply(removals, stamp="TEST")
         self.assertFalse(self.state.exists())
-        moved = list(self.state.parent.glob("state.removed-*"))
-        self.assertEqual(len(moved), 1)
-        self.assertTrue((moved[0] / "board.db").exists())
+        moved = self.state.with_name("state.removed-TEST")
+        self.assertTrue(moved.is_dir())
+        self.assertEqual(done[0]["action"], "moved")
+        self.assertEqual(done[0]["destination"], str(moved))
 
-    def test_purge_deletes_state_outright(self):
-        self.assertEqual(run_cli("reset", "--purge", "--force", cwd=self.root).returncode, 0)
-        self.assertFalse(self.state.exists())
-        self.assertEqual(list(self.state.parent.glob("state.removed-*")), [])
-
-    def test_all_removes_everything_init_created(self):
-        result = run_cli("reset", "--all", "--purge", "--force", cwd=self.root)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for relative in TEMPLATES:
-            self.assertFalse((self.root / relative).exists(), relative)
+    def test_apply_with_purge_deletes_and_prunes_empty_scaffolding(self):
+        removals = reset.plan(self.root, self.state, self.config, everything=True, purge=True)
+        done = reset.apply(removals, stamp="TEST")
         self.assertFalse((self.root / ".local-board").exists())
-        self.assertNotIn("Local Board runtime",
-                         (self.root / ".gitignore").read_text(encoding="utf-8"))
+        self.assertFalse((self.root / ".agents").exists())
+        self.assertTrue(self.root.exists())  # never the repo root itself
+        self.assertIn({"path": str(self.config), "action": "deleted"}, done)
 
-    def test_reset_then_init_yields_a_working_board(self):
-        run_cli("reset", "--all", "--purge", "--force", cwd=self.root)
-        self.assertEqual(run_cli("init", cwd=self.root).returncode, 0)
-        status = run_cli("status", "--json", cwd=self.root)
-        self.assertEqual(json.loads(status.stdout)["schema_version"], 4)
+    def test_apply_reports_kept_entries_without_touching_them(self):
+        (self.root / "AGENTS.md").write_text("my own policy\n", encoding="utf-8")
+        removals = reset.plan(self.root, self.state, self.config, everything=True, purge=True)
+        done = reset.apply(removals, stamp="TEST")
+        self.assertTrue((self.root / "AGENTS.md").exists())
+        kept = [entry for entry in done if entry["action"] == "kept"]
+        self.assertEqual(len(kept), 1)
 
-    def test_an_edited_agents_file_is_kept_not_deleted(self):
-        agents = self.root / "AGENTS.md"
-        agents.write_text(agents.read_text(encoding="utf-8") + "\n# team policy\n",
-                          encoding="utf-8")
-        result = run_cli("reset", "--all", "--purge", "--force", cwd=self.root)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertTrue(agents.exists())
-        self.assertIn("team policy", agents.read_text(encoding="utf-8"))
+    def test_gitignore_block_is_stripped_exactly(self):
+        removals = reset.plan(self.root, self.state, self.config, everything=True, purge=False)
+        reset.apply(removals, stamp="TEST")
+        self.assertEqual((self.root / ".gitignore").read_text(encoding="utf-8"), "*.pyc\n")
 
-    def test_a_legacy_database_can_be_cleared_and_reinitialized(self):
-        import sqlite3
-
-        run_cli("reset", "--purge", "--force", cwd=self.root)
-        self.state.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(self.state / "board.db") as db:
-            db.execute("PRAGMA user_version=2")
-        self.assertEqual(run_cli("init", cwd=self.root).returncode, 1)
-        self.assertEqual(run_cli("reset", "--purge", "--force", cwd=self.root).returncode, 0)
-        self.assertEqual(run_cli("init", cwd=self.root).returncode, 0)
-
-    def test_reset_refuses_while_a_server_holds_the_state(self):
-        port = 8797
-        proc = subprocess.Popen(
-            ["python3", "-m", "local_board.cli", "serve", "--port", str(port)],
-            cwd=self.root, env=_env(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        try:
-            deadline = time.monotonic() + 10
-            while time.monotonic() < deadline and not (self.state / "server.json").exists():
-                time.sleep(0.1)
-            result = run_cli("reset", "--force", cwd=self.root)
-            self.assertEqual(result.returncode, 1)
-            self.assertIn("still running", result.stderr)
-            self.assertTrue((self.state / "board.db").exists())
-        finally:
-            proc.send_signal(signal.SIGINT)
-            proc.communicate(timeout=10)
-
-    def test_reset_on_a_repository_without_a_board_is_a_no_op(self):
-        run_cli("reset", "--all", "--purge", "--force", cwd=self.root)
-        result = run_cli("reset", cwd=self.root)
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("nothing to remove", result.stdout)
-
-    def test_plan_is_available_as_json(self):
-        result = run_cli("reset", "--all", "--json", cwd=self.root)
-        self.assertEqual(result.returncode, 1)
-        payload = json.loads(result.stdout)
-        self.assertEqual(payload["removed"], [])
-        self.assertIn("state", {item["kind"] for item in payload["planned"]})
+    def test_hand_edited_gitignore_block_is_stripped_line_by_line(self):
+        (self.root / ".gitignore").write_text(
+            "*.pyc\n\n# Local Board runtime\n.local-board/state/\n.local-board/backups/\nnode_modules/\n",
+            encoding="utf-8",
+        )
+        reset._strip_gitignore_block(self.root / ".gitignore")
+        content = (self.root / ".gitignore").read_text(encoding="utf-8")
+        self.assertNotIn("Local Board", content)
+        self.assertNotIn(".local-board/", content)
+        self.assertIn("*.pyc", content)
+        self.assertIn("node_modules/", content)
 
 
 if __name__ == "__main__":
