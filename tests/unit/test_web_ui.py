@@ -104,6 +104,14 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn('return labels.map(label=>', self.html)
         self.assertIn('class="catalog-items"', self.html)
 
+    def test_status_indicators_follow_categories_across_issue_views(self):
+        for category in ("backlog", "unstarted", "started", "completed", "canceled"):
+            self.assertIn(f".status-indicator.{category}", self.html)
+        self.assertIn("function issueRow(issue,status)", self.html)
+        self.assertIn("items.map(issue=>issueRow(issue,status))", self.html)
+        self.assertIn("function boardCard(issue,status)", self.html)
+        self.assertIn("items.map(issue=>boardCard(issue,status))", self.html)
+
 
 class WebUiTest(unittest.TestCase):
     def setUp(self):

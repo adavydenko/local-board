@@ -92,17 +92,22 @@
     .issue-list{border-top:1px solid var(--line)}
     .status-group{border-bottom:1px solid var(--line)}
     .status-heading{height:36px;display:flex;align-items:center;gap:8px;padding:0 20px;background:var(--surface-raised);border-bottom:1px solid var(--line);position:sticky;top:52px;z-index:4}
-    .status-dot{width:12px;height:12px;border:1.5px solid currentColor;border-radius:50%;position:relative;color:#9a9aa2;flex:0 0 auto}
-    .status-dot.started{border-style:dashed;color:#746fbb}
-    .status-dot.completed{background:#75a88d;border-color:#75a88d}
-    .status-dot.completed:after{content:"";position:absolute;left:3px;top:1px;width:3px;height:6px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
-    .status-dot.canceled{border-color:#b6b6bc}
-    .status-dot.canceled:after{content:"";position:absolute;left:2px;right:2px;top:4px;border-top:1px solid currentColor;transform:rotate(-35deg)}
+    .status-indicator{--status-color:#a6a8ad;position:relative;width:14px;height:14px;display:inline-block;flex:0 0 auto;border:1.5px solid var(--status-color);border-radius:50%;background:transparent}
+    .status-indicator.backlog{--status-color:#c58a55;border-style:dotted}
+    .status-indicator.unstarted{--status-color:#a6a8ad}
+    .status-indicator.started{--status-color:#d4a700}
+    .status-indicator.started:before{content:"";position:absolute;inset:2px;border-radius:50%;background:linear-gradient(90deg,var(--status-color) 50%,transparent 50%)}
+    .status-indicator.completed{--status-color:var(--accent);background:var(--status-color)}
+    .status-indicator.completed:after{content:"";position:absolute;left:4px;top:2px;width:3px;height:6px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+    .status-indicator.canceled{--status-color:#9da0a6;background:var(--status-color)}
+    .status-indicator.canceled:before,.status-indicator.canceled:after{content:"";position:absolute;left:2px;top:5px;width:7px;height:1.5px;border-radius:1px;background:#fff}
+    .status-indicator.canceled:before{transform:rotate(45deg)}
+    .status-indicator.canceled:after{transform:rotate(-45deg)}
     .status-name{font-size:11.5px;font-weight:650}
     .status-count{color:var(--muted);font-size:10.5px;font-variant-numeric:tabular-nums}
     .status-add{margin-left:auto;width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:17px;line-height:1}
     .status-add:hover{background:var(--pressed);color:var(--text)}
-    .issue-row{width:100%;min-height:42px;display:grid;grid-template-columns:18px 62px minmax(180px,1fr) minmax(0,auto) 130px 28px;align-items:center;gap:8px;padding:6px 20px;border:0;border-bottom:1px solid #eeeeef;background:var(--surface);text-align:left}
+    .issue-row{width:100%;min-height:42px;display:grid;grid-template-columns:18px 62px 16px minmax(180px,1fr) minmax(0,auto) 130px 28px;align-items:center;gap:8px;padding:6px 20px;border:0;border-bottom:1px solid #eeeeef;background:var(--surface);text-align:left}
     .issue-row:last-child{border-bottom:0}
     .issue-row:hover{background:var(--hover)}
     .priority-mark{width:14px;height:14px;display:flex;align-items:flex-end;gap:1.5px;color:#a3a3aa}
@@ -130,6 +135,7 @@
     .column-heading .status-count{margin-left:auto}
     .board-card{display:block;width:100%;padding:10px 11px;margin-bottom:7px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);text-align:left;box-shadow:0 1px 1px rgba(0,0,0,.02)}
     .board-card:hover{border-color:var(--line-strong);box-shadow:0 2px 6px rgba(0,0,0,.045)}
+    .board-card-head{display:flex;align-items:center;gap:7px}
     .board-card-title{margin:7px 0 10px;font-size:12.5px;line-height:1.45}
     .board-card-meta{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10.5px}
     .board-card-meta .mini-avatar{margin-left:auto}
@@ -175,9 +181,10 @@
     .catalog-items{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-width:0}
     .catalog-items .label-chip{max-width:none}
     .catalog-status{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface-raised);color:var(--text-soft);font-size:10px;white-space:nowrap}
-    .catalog-status .status-dot{width:10px;height:10px}
-    .catalog-status .status-dot.completed:after{left:2px;top:0;width:3px;height:5px}
-    .catalog-status .status-dot.canceled:after{top:3px}
+    .catalog-status .status-indicator{width:12px;height:12px}
+    .catalog-status .status-indicator.started:before{inset:1.5px}
+    .catalog-status .status-indicator.completed:after{left:3px;top:1px;width:3px;height:5px}
+    .catalog-status .status-indicator.canceled:before,.catalog-status .status-indicator.canceled:after{left:1.5px;top:4px;width:6px}
     .managed-badge{padding:2px 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface-raised);color:var(--muted);font-size:9.5px;white-space:nowrap}
     .config-shell{overflow:hidden;border:1px solid #2f3035;border-radius:8px;background:#25262a;box-shadow:0 8px 24px rgba(25,25,28,.08)}
     .config-toolbar{height:36px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #38393f;color:#c3c4ca;font:10.5px ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -271,7 +278,7 @@
     @media(max-width:900px){
       :root{--sidebar-width:186px}
       .issue-grid{grid-template-columns:minmax(0,1fr) 230px;gap:30px;padding-left:28px;padding-right:28px}
-      .issue-row{grid-template-columns:18px 62px minmax(160px,1fr) minmax(0,auto) 28px}.assignee-cell{display:none}
+      .issue-row{grid-template-columns:18px 62px 16px minmax(160px,1fr) minmax(0,auto) 28px}.assignee-cell{display:none}
       .settings-intro,.settings-grid{grid-template-columns:1fr}.settings-intro{gap:17px}
     }
     @media(max-width:720px){
@@ -279,7 +286,7 @@
       .brand,.board-switcher,.nav-label,.identity{display:none}.primary-nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;height:100%;max-width:420px;margin:auto}.nav-item{height:44px;justify-content:center;flex-direction:column;gap:1px;padding:0;font-size:9px}.nav-icon{width:15px;height:15px}.nav-count{display:none}
       .workspace-header{height:48px;padding:0 12px}.content{min-height:calc(100vh - 100px)}.workspace-title .eyebrow,.refresh-label{display:none}
       .issues-header{padding:17px 14px 10px}.issues-heading{margin-bottom:13px}.issues-heading h1{font-size:19px}.issues-heading p{display:none}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:7px}.search-wrap{min-width:0;max-width:none;grid-column:1/3}.toolbar select{width:100%;max-width:none}.layout-toggle{margin-left:0;grid-column:3;grid-row:1}.filter-summary{padding:0 14px 8px}#milestoneFilter{grid-column:1}#assigneeFilter{grid-column:2}
-      .status-heading{top:48px;padding:0 12px}.issue-row{min-height:48px;grid-template-columns:18px 55px minmax(0,1fr) 22px;gap:6px;padding:6px 12px}.row-labels,.assignee-cell{display:none}.issue-title{font-size:12.5px}.row-empty{padding-left:44px}
+      .status-heading{top:48px;padding:0 12px}.issue-row{min-height:48px;grid-template-columns:18px 55px 16px minmax(0,1fr) 22px;gap:6px;padding:6px 12px}.row-labels,.assignee-cell{display:none}.issue-title{font-size:12.5px}.row-empty{padding-left:44px}
       .board-layout{grid-auto-flow:row;grid-auto-columns:auto;padding:0 10px 20px;min-height:0}.board-column{width:100%}.column-heading{position:sticky;top:48px;z-index:3;background:var(--canvas)}
       .activity-page{padding:18px 15px 50px}.activity-row{grid-template-columns:26px minmax(0,1fr)}.activity-time{grid-column:2}
       .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-properties{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .property{grid-template-columns:78px minmax(0,1fr)}
@@ -545,20 +552,23 @@ function filteredIssues(){
   return (data.issues||[]).filter(issue=>(!query||issue.title.toLowerCase().includes(query)||issue.identifier.toLowerCase().includes(query)||(issue.labels||[]).some(label=>String(label).toLowerCase().includes(query)))&&(!milestone||String(issue.milestone_id)===milestone)&&(!assignee||String(issue.assignee_id)===assignee));
 }
 
-function statusDot(status){return `<span class="status-dot ${esc(status.category)}" aria-hidden="true"></span>`}
+function statusIndicator(status,label=''){
+  const category=status?.category||'unstarted',accessibility=label?`role="img" aria-label="${esc(label)} status" title="${esc(label)}"`:'aria-hidden="true"';
+  return `<span class="status-indicator ${esc(category)}" ${accessibility}></span>`;
+}
 function priorityMark(priority){return `<span class="priority-mark ${esc(priority)}" title="${esc(humanize(priority))} priority" aria-label="${esc(humanize(priority))} priority"><i></i><i></i><i></i></span>`}
 function listLabelChips(issue){
   return (issue.labels||[]).slice(0,2).map(name=>{const label=labelCatalog(name);return `<span class="label-chip" title="${esc(label?.name||name)}"><span class="label-dot" style="--label-color:${esc(label?.color||'#8d8d95')}"></span>${esc(label?.name||name)}</span>`}).join('');
 }
 
-function issueRow(issue){
+function issueRow(issue,status){
   const assignee=issue.assignee?`<span>${esc(issue.assignee)}</span><span class="mini-avatar">${esc(initials(issue.assignee))}</span>`:'<span>Unassigned</span>';
   const signal=issue.blocked?'<span class="row-signal blocked" title="Blocked" aria-label="Blocked">!</span>':issue.claim_expires_at?'<span class="row-signal" title="Claimed" aria-label="Claimed">●</span>':'<span></span>';
-  return `<button class="issue-row" type="button" data-ref="${esc(issue.identifier)}">${priorityMark(issue.priority)}<span class="issue-id">${esc(issue.identifier)}</span><span class="issue-title">${esc(issue.title)}</span><span class="row-labels">${listLabelChips(issue)}</span><span class="assignee-cell">${assignee}</span>${signal}</button>`;
+  return `<button class="issue-row" type="button" data-ref="${esc(issue.identifier)}">${priorityMark(issue.priority)}<span class="issue-id">${esc(issue.identifier)}</span>${statusIndicator(status,issue.status)}<span class="issue-title">${esc(issue.title)}</span><span class="row-labels">${listLabelChips(issue)}</span><span class="assignee-cell">${assignee}</span>${signal}</button>`;
 }
 
-function boardCard(issue){
-  return `<button class="board-card" type="button" data-ref="${esc(issue.identifier)}"><span class="issue-id">${esc(issue.identifier)}</span><div class="board-card-title">${esc(issue.title)}</div>${listLabelChips(issue)}<div class="board-card-meta">${priorityMark(issue.priority)}${issue.blocked?'<span style="color:var(--danger)">Blocked</span>':''}${issue.assignee?`<span class="mini-avatar" title="${esc(issue.assignee)}">${esc(initials(issue.assignee))}</span>`:''}</div></button>`;
+function boardCard(issue,status){
+  return `<button class="board-card" type="button" data-ref="${esc(issue.identifier)}"><div class="board-card-head"><span class="issue-id">${esc(issue.identifier)}</span>${statusIndicator(status,issue.status)}</div><div class="board-card-title">${esc(issue.title)}</div>${listLabelChips(issue)}<div class="board-card-meta">${priorityMark(issue.priority)}${issue.blocked?'<span style="color:var(--danger)">Blocked</span>':''}${issue.assignee?`<span class="mini-avatar" title="${esc(issue.assignee)}">${esc(initials(issue.assignee))}</span>`:''}</div></button>`;
 }
 
 function renderIssues(){
@@ -568,11 +578,11 @@ function renderIssues(){
   issueList.innerHTML=statuses.length?statuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
     const add=canWrite()?`<button class="status-add" type="button" data-new-status="${esc(status.name)}" aria-label="Create issue in ${esc(status.name)}">+</button>`:'';
-    return `<section class="status-group" aria-labelledby="status-${status.position}"><div class="status-heading">${statusDot(status)}<span class="status-name" id="status-${status.position}">${esc(status.name)}</span><span class="status-count">${items.length}</span>${add}</div>${items.map(issueRow).join('')||'<div class="row-empty">No issues</div>'}</section>`;
+    return `<section class="status-group" aria-labelledby="status-${status.position}"><div class="status-heading">${statusIndicator(status)}<span class="status-name" id="status-${status.position}">${esc(status.name)}</span><span class="status-count">${items.length}</span>${add}</div>${items.map(issue=>issueRow(issue,status)).join('')||'<div class="row-empty">No issues</div>'}</section>`;
   }).join(''):'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>';
   issueBoard.innerHTML=statuses.length?statuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
-    return `<section class="board-column"><div class="column-heading">${statusDot(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span></div>${items.map(boardCard).join('')||'<div class="row-empty">No issues</div>'}</section>`;
+    return `<section class="board-column"><div class="column-heading">${statusIndicator(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span></div>${items.map(issue=>boardCard(issue,status)).join('')||'<div class="row-empty">No issues</div>'}</section>`;
   }).join(''):'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>';
 }
 
@@ -607,7 +617,7 @@ function catalogSummary(items){
 }
 
 function settingsStatusItems(statuses){
-  return statuses.map(status=>`<span class="catalog-status">${statusDot(status)}<span>${esc(status.name)}</span></span>`).join('')||'<span class="muted">None configured</span>';
+  return statuses.map(status=>`<span class="catalog-status">${statusIndicator(status)}<span>${esc(status.name)}</span></span>`).join('')||'<span class="muted">None configured</span>';
 }
 
 function settingsLabelItems(labels){
@@ -679,7 +689,7 @@ function renderDetail(){
   const gitLinkForm=canWrite()?`<form class="add-row" data-form="gitlink"><select class="control" name="kind"><option value="commit">Commit</option><option value="pr">Pull request</option><option value="mr">Merge request</option></select><input class="control" name="ref" placeholder="Reference" required><input class="control" name="url" type="url" placeholder="URL (optional)"><button class="button small" type="submit">Add</button></form>`:'';
   const commentForm=canWrite()?`<form class="composer" data-form="comment"><input class="control" name="body" placeholder="Leave a comment…" aria-label="Comment" required><button class="button primary" type="submit">Send</button></form>`:'';
   issueToolbarId.textContent=issue.identifier;
-  issueDocument.innerHTML=`<div class="issue-kicker">${statusDot({category:issue.category})}<span>${esc(issue.status)}</span>${issue.blocked?'<span class="label-chip" style="color:var(--danger)">Blocked</span>':''}</div>
+  issueDocument.innerHTML=`<div class="issue-kicker">${statusIndicator({category:issue.category})}<span>${esc(issue.status)}</span>${issue.blocked?'<span class="label-chip" style="color:var(--danger)">Blocked</span>':''}</div>
     <h1 class="issue-title-heading" id="issueTitleHeading">${esc(issue.title)}</h1>
     ${markdown(issue.description)}
     <details class="mobile-properties"><summary>Issue properties</summary><div style="padding-top:10px">${propertyContent}</div></details>
