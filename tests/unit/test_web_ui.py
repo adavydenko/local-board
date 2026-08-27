@@ -89,6 +89,13 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn("settingsView.classList.toggle('hidden',view!=='settings')", self.html)
         self.assertIn("state?.view==='settings'?'settings'", self.html)
 
+    def test_settings_catalog_renders_complete_status_and_colored_label_lists(self):
+        self.assertIn('function settingsStatusItems(statuses)', self.html)
+        self.assertIn('return statuses.map(status=>', self.html)
+        self.assertIn('function settingsLabelItems(labels)', self.html)
+        self.assertIn('return labels.map(label=>', self.html)
+        self.assertIn('class="catalog-items"', self.html)
+
 
 class WebUiTest(unittest.TestCase):
     def setUp(self):

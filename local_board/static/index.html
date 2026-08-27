@@ -171,7 +171,13 @@
     .catalog-copy{min-width:0}
     .catalog-copy strong,.catalog-copy small{display:block}
     .catalog-copy strong{font-size:11.5px;font-weight:600}
-    .catalog-copy small{margin-top:2px;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .catalog-copy small{margin-top:2px;color:var(--muted);font-size:10px;line-height:1.45}
+    .catalog-items{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;min-width:0}
+    .catalog-items .label-chip{max-width:none}
+    .catalog-status{display:inline-flex;align-items:center;gap:5px;height:20px;padding:0 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface-raised);color:var(--text-soft);font-size:10px;white-space:nowrap}
+    .catalog-status .status-dot{width:10px;height:10px}
+    .catalog-status .status-dot.completed:after{left:2px;top:0;width:3px;height:5px}
+    .catalog-status .status-dot.canceled:after{top:3px}
     .managed-badge{padding:2px 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface-raised);color:var(--muted);font-size:9.5px;white-space:nowrap}
     .config-shell{overflow:hidden;border:1px solid #2f3035;border-radius:8px;background:#25262a;box-shadow:0 8px 24px rgba(25,25,28,.08)}
     .config-toolbar{height:36px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #38393f;color:#c3c4ca;font:10.5px ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -595,8 +601,15 @@ function projectToml(){
 
 function catalogSummary(items){
   if(!items.length)return 'None configured';
-  const names=items.slice(0,3).map(item=>item.name).join(', ');
-  return names+(items.length>3?` +${items.length-3} more`:'');
+  return items.map(item=>item.name).join(', ');
+}
+
+function settingsStatusItems(statuses){
+  return statuses.map(status=>`<span class="catalog-status">${statusDot(status)}<span>${esc(status.name)}</span></span>`).join('')||'<span class="muted">None configured</span>';
+}
+
+function settingsLabelItems(labels){
+  return labels.map(label=>`<span class="label-chip"><span class="label-dot" style="--label-color:${esc(label.color||'#8d8d95')}"></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None configured</span>';
 }
 
 function renderSettings(){
@@ -608,9 +621,9 @@ function renderSettings(){
     <div class="settings-row"><span>Default priority</span><strong>${esc(humanize(board.defaults?.priority||'medium'))}</strong></div>
     <div class="settings-row"><span>Start policy</span><strong>${board.agent_policy?.require_assignee_before_start!==false?'Assignee required':'Unassigned starts allowed'}</strong></div>`;
   settingsCatalog.innerHTML=`
-    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5" stroke="currentColor"/><path d="M5.5 8h5" stroke="currentColor" stroke-linecap="round"/></svg></span><span class="catalog-copy"><strong>Statuses · ${statuses.length}</strong><small>${esc(catalogSummary(statuses))}</small></span><span class="managed-badge">TOML</span></div>
+    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5" stroke="currentColor"/><path d="M5.5 8h5" stroke="currentColor" stroke-linecap="round"/></svg></span><span class="catalog-copy"><strong>Statuses · ${statuses.length}</strong><span class="catalog-items">${settingsStatusItems(statuses)}</span></span><span class="managed-badge">TOML</span></div>
     <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3.5h10v9H3zM5.5 2v3M10.5 2v3M3 6.5h10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="catalog-copy"><strong>Milestones · ${milestones.length}</strong><small>${esc(catalogSummary(milestones))}</small></span><span class="managed-badge">TOML</span></div>
-    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m8.2 2.5 5.3 5.3-5.7 5.7-5.3-5.3V2.5h5.7Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="5.3" cy="5.3" r=".8" fill="currentColor"/></svg></span><span class="catalog-copy"><strong>Labels · ${labels.length}</strong><small>${esc(catalogSummary(labels))}</small></span><span class="managed-badge">TOML</span></div>`;
+    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m8.2 2.5 5.3 5.3-5.7 5.7-5.3-5.3V2.5h5.7Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="5.3" cy="5.3" r=".8" fill="currentColor"/></svg></span><span class="catalog-copy"><strong>Labels · ${labels.length}</strong><span class="catalog-items">${settingsLabelItems(labels)}</span></span><span class="managed-badge">TOML</span></div>`;
   configPreview.textContent=projectToml();
 }
 
