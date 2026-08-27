@@ -63,6 +63,29 @@ COMMANDS: tuple[Command, ...] = (
         next_steps=("local-board actor <your-name> --kind human", "local-board serve"),
     ),
     Command(
+        "reset", "Set up",
+        "Undo init: remove the board state, and optionally everything init added",
+        usage=("local-board reset [--all] [--purge] --force",),
+        description=(
+            "Without --force, prints what it would remove and changes nothing. State is\n"
+            "moved to <name>.removed-<timestamp> beside the original unless --purge is\n"
+            "given, so a board removed by mistake is one `mv` away from coming back.\n"
+            "Refuses to run while a server still holds the state. An AGENTS.md with local\n"
+            "edits is always kept: init will not overwrite it, so reset will not delete it."
+        ),
+        options=(
+            Option("    --all", "Also remove project.toml, agent onboarding, and the .gitignore block"),
+            Option("    --purge", "Delete state outright instead of moving it aside"),
+            Option("    --force", "Required: carry out the plan"),
+        ),
+        examples=(
+            "local-board reset",
+            "local-board reset --force",
+            "local-board reset --all --purge --force",
+        ),
+        next_steps=("local-board init",),
+    ),
+    Command(
         "actor", "Set up",
         "Create an actor and print its token once",
         usage=("local-board actor <name> [--kind agent|human] [--role admin|member|viewer]",),

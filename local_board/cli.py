@@ -25,6 +25,7 @@ from .doctor import run_doctor
 from .errors import describe
 from .onboarding import install_onboarding
 from .repository import Repository, RepositoryNotFound, resolve_database_path
+from . import reset as reset_module
 from .web import serve
 
 EXIT_OK = 0
@@ -128,6 +129,11 @@ def build_parser() -> Parser:
     actor.add_argument("--kind", choices=("agent", "human"), default="agent")
     actor.add_argument("--role", choices=("admin", "member", "viewer"))
 
+    reset_parser = command("reset")
+    reset_parser.add_argument("--all", action="store_true", dest="everything")
+    reset_parser.add_argument("--purge", action="store_true")
+    reset_parser.add_argument("--force", action="store_true")
+
     web = command("serve")
     web.add_argument("--host", default="127.0.0.1")
     web.add_argument("--port", type=int, default=8765)
@@ -182,24 +188,43 @@ def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     ui.configure(_early_colour(argv))
     parser = build_parser()
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except BrokenPipeError:
+        return _silence_broken_pipe()
 
     ui.configure("never" if getattr(args, "json", False) else getattr(args, "color", "auto"))
 
-    if args.command is None:
-        usage.overview(sys.stdout)
-        return EXIT_OK
-    if args.command == "help":
-        return _run_help(args.topic)
+    try:
+        if args.command is None:
+            usage.overview(sys.stdout)
+            return EXIT_OK
+        if args.command == "help":
+            return _run_help(args.topic)
+    except BrokenPipeError:
+        return _silence_broken_pipe()
 
     config_path = _config_path(args)
     try:
         _dispatch(args, config_path)
     except SystemExit:
         raise
+    except BrokenPipeError:
+        return _silence_broken_pipe()
     except Exception as exc:
         _report_error(args, exc)
         return EXIT_FAILURE
+    return EXIT_OK
+
+
+def _silence_broken_pipe() -> int:
+    """`local-board --help | head` closes the pipe early; that is the reader's
+    choice, not an error. Point stdout at devnull so the interpreter's shutdown
+    flush cannot raise a second time on the way out."""
+    try:
+        os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+    except OSError:
+        pass
     return EXIT_OK
 
 
@@ -222,6 +247,8 @@ def _dispatch(args: argparse.Namespace, config_path: Path) -> None:
         _run_init(args, config_path)
     elif args.command == "actor":
         _run_actor(args)
+    elif args.command == "reset":
+        _run_reset(args, config_path)
     elif args.command == "serve":
         serve(_require_board(args), args.host, args.port)
     elif args.command == "status":
@@ -354,6 +381,65 @@ def _run_init(args: argparse.Namespace, config_path: Path) -> None:
     ]
     for index, step in enumerate(steps, start=1):
         print(f"  {ui.theme.dim(str(index))}  {step}")
+
+
+def _run_reset(args: argparse.Namespace, config_path: Path) -> None:
+    db_path = resolve_database_path(getattr(args, "db", None))
+    state_dir = db_path.parent
+    try:
+        root = Repository.discover().root
+    except RepositoryNotFound:
+        root = Path.cwd()
+
+    pid = reset_module.server_pid(state_dir)
+    if pid is not None:
+        ui.error(f"a Local Board server is still running (pid {pid})",
+                 "stop it first, then re-run `local-board reset`")
+        raise SystemExit(EXIT_FAILURE)
+
+    removals = reset_module.plan(root, state_dir, config_path,
+                                 everything=args.everything, purge=args.purge)
+    if not removals:
+        if _emit(args, {"planned": [], "removed": [], "forced": args.force}):
+            return
+        print(ui.theme.dim("nothing to remove: this repository has no Local Board state"))
+        return
+
+    if not args.force:
+        if _emit(args, {"planned": [item.as_dict(root) for item in removals], "removed": []}):
+            raise SystemExit(EXIT_FAILURE)
+        ui.heading("reset would remove")
+        print()
+        _print_removals(removals)
+        print()
+        ui.error("nothing was removed", "re-run with --force to carry out the plan")
+        raise SystemExit(EXIT_FAILURE)
+
+    done = reset_module.apply(removals)
+    if _emit(args, {"planned": [item.as_dict(root) for item in removals], "removed": done}):
+        return
+    ui.heading("Reset")
+    print()
+    _print_removals(removals)
+    moved = [item for item in done if item["action"] == "moved"]
+    print()
+    if moved:
+        print(ui.theme.dim("moved aside (delete when you are sure):"))
+        for item in moved:
+            print(f"  {_display(Path(item['destination']))}")
+        print()
+    ui.heading("Next")
+    print("  local-board init")
+
+
+def _print_removals(removals: list) -> None:
+    width = max(len(item.kind) for item in removals)
+    verbs = {"move": "move", "delete": "remove", "edit": "edit", "keep": "keep"}
+    verb_width = max(len(verbs[item.action]) for item in removals)
+    for item in removals:
+        note = f" {ui.theme.dim('— ' + item.note)}" if item.note else ""
+        print(f"  {ui.theme.dim(verbs[item.action].ljust(verb_width))}  {item.kind.ljust(width)}  "
+              f"{_display(item.path)}{note}")
 
 
 def _run_actor(args: argparse.Namespace) -> None:
