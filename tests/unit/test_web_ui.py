@@ -13,6 +13,72 @@ from local_board.db import Board
 from local_board.web import make_handler
 
 
+class WebUiMarkupTest(unittest.TestCase):
+    """Small product-contract checks for the dependency-free browser client."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.html = (Path(__file__).parents[2] / "local_board" / "static" / "index.html").read_text()
+
+    def test_issue_workspace_defaults_to_a_grouped_list_with_optional_board_view(self):
+        self.assertIn('id="issueList"', self.html)
+        self.assertIn('data-layout="list"', self.html)
+        self.assertIn('data-layout="board"', self.html)
+        self.assertIn("let currentLayout='list'", self.html)
+
+    def test_issue_detail_is_an_in_app_page_not_a_modal(self):
+        self.assertIn('id="issueView"', self.html)
+        self.assertIn('data-action="back-to-issues"', self.html)
+        self.assertNotIn('id="detailDialog"', self.html)
+        self.assertNotIn('detailDialog.showModal()', self.html)
+
+    def test_checklist_ui_is_not_promoted_by_the_web_client(self):
+        self.assertNotIn('for checklist items', self.html)
+        self.assertNotIn('class="check', self.html)
+        self.assertNotIn('type="checkbox" checked disabled', self.html)
+
+    def test_primary_navigation_and_status_messages_are_accessible(self):
+        self.assertIn('href="#mainContent"', self.html)
+        self.assertIn('aria-label="Primary navigation"', self.html)
+        self.assertIn('role="status" aria-live="polite"', self.html)
+        self.assertIn('aria-label="Issue layout"', self.html)
+
+    def test_ui_uses_an_embedded_favicon_without_an_authenticated_request(self):
+        self.assertIn('<link rel="icon" href="data:,">', self.html)
+
+    def test_new_issue_can_be_assigned_when_created_in_a_started_status(self):
+        self.assertIn('id="issueAssignee"', self.html)
+        self.assertIn('assignee_id:assignee?+assignee:null', self.html)
+
+    def test_initial_restore_does_not_steal_focus_from_the_skip_link(self):
+        self.assertIn("{updateHistory:false,focusContent:false}", self.html)
+
+    def test_active_primary_navigation_exposes_the_current_page(self):
+        self.assertIn("setAttribute('aria-current',active?'page':'false')", self.html)
+
+    def test_external_git_links_reject_unsafe_url_schemes(self):
+        self.assertIn("function safeExternalUrl(value)", self.html)
+        self.assertIn("['http:','https:'].includes(url.protocol)", self.html)
+
+    def test_history_restores_views_and_direct_issue_links_stay_in_the_app(self):
+        self.assertIn("history.state?.fromApp", self.html)
+        self.assertIn("state?.view==='activity'", self.html)
+        self.assertIn("history.replaceState({view:'issues'}", self.html)
+
+    def test_claim_conflicts_reload_current_issue_state(self):
+        self.assertIn("async function mutateClaim(action,message)", self.html)
+        self.assertIn("await refreshDetail()", self.html)
+
+    def test_mobile_keeps_the_primary_filters_available(self):
+        self.assertIn("#milestoneFilter{grid-column:1}", self.html)
+        self.assertIn("#assigneeFilter{grid-column:2}", self.html)
+        self.assertNotIn(".toolbar select{display:none}", self.html)
+
+    def test_viewer_role_gets_a_read_only_issue_workspace(self):
+        self.assertIn("function canWrite(){return identity?.role!=='viewer'}", self.html)
+        self.assertIn("if(!canWrite())return readOnlyProperties(issue)", self.html)
+
+
 class WebUiTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

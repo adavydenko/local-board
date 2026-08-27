@@ -1,166 +1,399 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <link rel="icon" href="data:,">
   <title>Local Board</title>
   <style>
-    :root{color-scheme:dark;--bg:#090b10;--side:#0d1016;--panel:#121620;--raised:#171c27;--line:#262d3b;--text:#eef1f7;--muted:#8e98aa;--accent:#8b7cf6;--accent2:#6255d9;--danger:#fb7185;--warn:#fbbf24;--ok:#4ade80}
+    :root{
+      --canvas:#f7f7f8;--sidebar:#f2f2f3;--surface:#fff;--surface-raised:#fafafa;
+      --text:#242428;--text-soft:#515158;--muted:#686870;--faint:#686870;
+      --line:#e6e6e8;--line-strong:#d8d8dc;--hover:#f5f5f6;--pressed:#eeeeef;
+      --accent:#5e6ad2;--accent-hover:#4f5bc2;--accent-soft:#eef0ff;
+      --danger:#d14b5a;--danger-soft:#fff0f1;--warning:#b86b18;--success:#33825a;
+      --radius:7px;--sidebar-width:224px;
+    }
     *{box-sizing:border-box}
-    body{margin:0;background:radial-gradient(circle at 55% -20%,#1a1b35 0,transparent 38%),var(--bg);color:var(--text);font:14px Inter,ui-sans-serif,system-ui,-apple-system,sans-serif}
-    button,input,select,textarea{font:inherit}
+    html{height:100%;background:var(--canvas)}
+    body{min-height:100%;margin:0;color:var(--text);background:var(--canvas);font:13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;-webkit-font-smoothing:antialiased}
+    button,input,select,textarea{font:inherit;color:inherit}
     button{cursor:pointer}
-    .app{display:grid;grid-template-columns:236px minmax(0,1fr);min-height:100vh}
-    .sidebar{background:rgba(13,16,22,.92);border-right:1px solid var(--line);padding:22px 14px;display:flex;flex-direction:column;position:sticky;top:0;height:100vh}
-    .brand{display:flex;gap:10px;align-items:center;font-size:17px;font-weight:750;padding:0 10px 25px}
-    .logo{display:grid;place-items:center;width:27px;height:27px;border-radius:8px;background:linear-gradient(135deg,var(--accent),#6355d8);box-shadow:0 0 25px #8b7cf655}
-    .nav{display:flex;align-items:center;gap:11px;border:0;color:var(--muted);background:transparent;padding:10px 11px;border-radius:8px;text-align:left;width:100%;margin:2px 0}
-    .nav:hover,.nav.active{background:#1a1f2a;color:var(--text)}
-    .nav span{width:18px;text-align:center}
-    .identity{margin-top:auto;padding:12px;background:#11151e;border:1px solid var(--line);border-radius:9px}
-    .identity strong{display:block}
-    .identity small{color:var(--muted)}
-    .main{padding:26px 30px;min-width:0}
-    .topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:20px}
-    .title h1{font-size:22px;margin:0 0 5px}
-    .muted{color:var(--muted)}
-    .actions{display:flex;gap:8px}
-    .btn{border:1px solid transparent;border-radius:8px;padding:8px 12px;background:var(--accent);color:white;font-weight:650}
-    .btn:hover{background:var(--accent2)}
-    .btn.secondary{background:#181d28;border-color:var(--line);color:var(--text)}
-    .btn.danger{background:#351923;color:#fda4af}
-    .btn.small{padding:5px 8px;font-size:12px}
-    .select,input,textarea{background:#0d1119;border:1px solid var(--line);border-radius:8px;color:var(--text);padding:9px 10px;outline:none}
-    .select:focus,input:focus,textarea:focus{border-color:var(--accent)}
-    .toolbar{display:flex;gap:10px;align-items:center;margin-bottom:18px;flex-wrap:wrap}
-    .toolbar .select{min-width:170px}
-    .stats{display:grid;grid-template-columns:repeat(4,minmax(120px,180px));gap:10px;margin-bottom:18px}
-    .stat{background:linear-gradient(145deg,#141923,#10141c);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
-    .stat b{font-size:21px;display:block;margin-bottom:3px}
-    .stat span{font-size:12px;color:var(--muted)}
-    .board{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(230px,1fr);gap:11px;overflow:auto;padding-bottom:15px;min-height:540px}
-    .column{background:#0d1118;border:1px solid #202633;border-radius:11px;padding:9px}
-    .column-head{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:700;color:#b7becc;padding:5px 5px 9px}
-    .count{background:#252b38;color:var(--muted);border-radius:10px;padding:1px 7px}
-    .card{background:linear-gradient(145deg,#171c27,#131821);border:1px solid #29303e;border-radius:9px;padding:12px;margin:0 0 8px;transition:.15s;cursor:pointer}
-    .card:hover{transform:translateY(-1px);border-color:#4c456f;box-shadow:0 8px 24px #0005}
-    .card-title{font-weight:650;line-height:1.4;margin-bottom:11px}
-    .meta{display:flex;align-items:center;justify-content:space-between;color:var(--muted);font-size:11px}
-    .badges{display:flex;gap:5px;margin-bottom:9px;flex-wrap:wrap}
-    .badge{font-size:10px;padding:2px 6px;border-radius:5px;background:#252b38;color:#c7cedb}
-    .badge.claimed{background:#132a1d;color:var(--ok)}
-    .badge.blocked{background:#3a1b25;color:var(--danger)}
-    .chip{display:inline-flex;align-items:center;border:1px solid var(--line);background:#161b26;color:var(--muted);border-radius:999px;padding:3px 10px;font-size:11px;cursor:pointer;margin:2px 4px 2px 0}
-    .chip.active{color:var(--text);background:#221c3a;border-color:var(--accent)}
-    .priority-urgent{color:var(--danger)}
-    .priority-high{color:var(--warn)}
-    .empty{color:#5f6878;text-align:center;padding:42px 5px;font-size:12px}
-    .panel{background:var(--panel);border:1px solid var(--line);border-radius:11px;overflow:hidden}
-    .activity-row{display:grid;grid-template-columns:150px 150px 1fr 190px;gap:15px;padding:12px 16px;border-bottom:1px solid var(--line);color:var(--muted)}
+    a{color:inherit}
     .hidden{display:none!important}
-    .login{position:fixed;inset:0;background:radial-gradient(circle at center,#171a2d,#07090ddd 50%);display:grid;place-items:center;z-index:20}
-    .login-card{width:min(400px,calc(100vw - 30px));padding:29px;background:#121620;border:1px solid #2b3241;border-radius:14px;box-shadow:0 30px 80px #000}
-    .login-card h2{margin:0 0 8px}
-    .login-card input{width:100%;margin:14px 0 10px}
-    .error{color:#fda4af;margin-top:9px}
-    .dialog{border:1px solid #30384a;background:#121620;color:var(--text);border-radius:14px;width:min(580px,calc(100vw - 28px));padding:0;box-shadow:0 30px 100px #000}
-    .dialog.wide{width:min(860px,calc(100vw - 28px))}
-    .dialog::backdrop{background:#05060acc;backdrop-filter:blur(3px)}
-    .dialog-body{padding:22px}
-    .dialog h2{margin:0 0 18px}
-    .field{display:block;margin:11px 0;color:#b8c0cf;font-size:12px}
-    .field input,.field textarea,.field select{width:100%;margin-top:6px}
-    .field textarea{min-height:110px;resize:vertical}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-    .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
-    .detail-head{display:flex;justify-content:space-between;gap:15px}
-    .detail-head h2{margin:4px 0}
-    .detail-id{color:var(--muted);font-size:12px}
-    .markdown{line-height:1.65;color:#d9deea;padding:12px 0;white-space:normal}
-    .markdown code{background:#262c38;padding:2px 5px;border-radius:4px}
-    .bullet{margin:2px 0}
-    .section{border-top:1px solid var(--line);padding:16px 0}
-    .section h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:0 0 11px}
-    .section h4{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin:12px 0 6px;font-weight:650}
-    .check{display:flex;align-items:center;gap:9px;padding:6px 0}
-    .check.done span{text-decoration:line-through;color:var(--muted)}
-    .comment{padding:10px 0;border-bottom:1px solid #232936}
-    .comment strong{font-size:12px}
-    .comment p{margin:5px 0;color:#ccd2df}
-    .inline-form{display:flex;gap:7px;margin-top:8px;flex-wrap:wrap}
-    .inline-form input,.inline-form select{flex:1;min-width:90px}
-    .detail-grid{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:22px}
-    .side-fields{background:#0e121a;border-radius:9px;padding:12px;height:max-content}
-    .side-fields .field{margin:0 0 12px}
-    .link{color:#a99df9}
-    .link-btn{background:none;border:0;color:var(--accent);cursor:pointer;padding:0;font:inherit;text-decoration:underline}
-    .dep-row{display:flex;align-items:center;gap:8px;padding:3px 0}
-    .blocked{color:#fda4af}
-    .toast{position:fixed;right:22px;bottom:22px;background:#202635;border:1px solid #394256;border-radius:9px;padding:11px 15px;box-shadow:0 12px 40px #000;z-index:30}
-    @media(max-width:850px){.app{grid-template-columns:64px 1fr}.sidebar{padding:18px 8px}.brand{padding:0 9px 22px}.brand-text,.nav label,.identity{display:none}.nav{justify-content:center}.main{padding:20px 14px}.detail-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.activity-row{grid-template-columns:1fr 1fr}.hide-mobile{display:none}}
+    .muted{color:var(--muted)}
+    .skip-link{position:fixed;left:12px;top:-60px;z-index:100;padding:8px 12px;border-radius:var(--radius);background:var(--text);color:#fff;text-decoration:none;transition:top .15s}
+    .skip-link:focus{top:12px}
+    :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+    .app{display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);min-height:100vh}
+    .sidebar{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:10px 8px;background:var(--sidebar);border-right:1px solid var(--line)}
+    .brand{display:flex;align-items:center;gap:9px;height:40px;padding:0 8px;margin-bottom:10px;font-weight:650;letter-spacing:-.01em}
+    .logo{position:relative;width:22px;height:22px;flex:0 0 auto;border-radius:6px;background:#29292d;color:#fff;display:grid;place-items:center;font-size:10px;font-weight:800}
+    .logo:after{content:"";position:absolute;width:6px;height:6px;border:1.5px solid #fff;transform:rotate(45deg);border-radius:1px}
+    .board-switcher{display:flex;align-items:center;gap:9px;width:100%;min-width:0;padding:7px 8px;margin-bottom:15px;border:1px solid transparent;border-radius:var(--radius);background:transparent;text-align:left}
+    .board-switcher:hover{background:rgba(0,0,0,.035)}
+    .board-mark{width:22px;height:22px;display:grid;place-items:center;border-radius:5px;background:var(--accent);color:#fff;font-size:9px;font-weight:750;letter-spacing:.02em}
+    .board-copy{min-width:0;flex:1}
+    .board-copy strong,.board-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .board-copy strong{font-size:12.5px;font-weight:600}
+    .board-copy small{font-size:10.5px;color:var(--muted)}
+    .nav-label{padding:0 9px 5px;color:var(--faint);font-size:10px;font-weight:650;text-transform:uppercase;letter-spacing:.08em}
+    .primary-nav{display:grid;gap:2px}
+    .nav-item{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--text-soft);text-align:left;font-weight:500}
+    .nav-item:hover{background:rgba(0,0,0,.04);color:var(--text)}
+    .nav-item.active{background:rgba(0,0,0,.055);color:var(--text);font-weight:600}
+    .nav-icon{width:16px;height:16px;color:var(--muted)}
+    .nav-item.active .nav-icon{color:var(--text-soft)}
+    .nav-count{margin-left:auto;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+    .identity{margin-top:auto;display:flex;align-items:center;gap:9px;padding:9px 8px;border-top:1px solid var(--line)}
+    .avatar{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:#dedee2;color:#55555c;font-size:9px;font-weight:750;text-transform:uppercase;flex:0 0 auto}
+    .identity-copy{min-width:0}
+    .identity-copy strong,.identity-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .identity-copy strong{font-size:11.5px;font-weight:600}
+    .identity-copy small{font-size:10px;color:var(--muted)}
+
+    .workspace{min-width:0;background:var(--surface)}
+    .workspace-header{height:52px;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.94);position:sticky;top:0;z-index:10;backdrop-filter:blur(12px)}
+    .workspace-title{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px;font-weight:600}
+    .workspace-title .eyebrow{color:var(--muted);font-weight:500}
+    .workspace-actions{margin-left:auto;display:flex;align-items:center;gap:7px}
+    .button{height:30px;display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:0 10px;border:1px solid var(--line-strong);border-radius:6px;background:var(--surface);color:var(--text-soft);font-size:12px;font-weight:550;white-space:nowrap}
+    .button:hover{background:var(--hover);color:var(--text)}
+    .button.primary{border-color:var(--accent);background:var(--accent);color:#fff}
+    .button.primary:hover{background:var(--accent-hover)}
+    .button.quiet{border-color:transparent;background:transparent}
+    .button.danger{border-color:#f1cdd1;background:var(--danger-soft);color:var(--danger)}
+    .button.icon-only{width:30px;padding:0}
+    .button.small{height:26px;padding:0 8px;font-size:11px}
+    .button svg{width:14px;height:14px}
+    .content{min-height:calc(100vh - 52px)}
+
+    .issues-header{padding:21px 24px 12px}
+    .issues-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:16px}
+    .issues-heading h1{font-size:20px;line-height:1.2;letter-spacing:-.025em;margin:0 0 4px;font-weight:650}
+    .issues-heading p{margin:0;color:var(--muted);font-size:12px}
+    .toolbar{display:flex;align-items:center;gap:8px;min-width:0}
+    .search-wrap{position:relative;min-width:180px;max-width:360px;flex:1}
+    .search-wrap svg{position:absolute;left:9px;top:8px;width:14px;height:14px;color:var(--muted);pointer-events:none}
+    .control{height:30px;border:1px solid var(--line);border-radius:6px;background:var(--surface);padding:0 9px;outline:none;font-size:12px}
+    .control:hover{border-color:var(--line-strong)}
+    .control:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+    .search{width:100%;padding-left:29px;background:var(--surface-raised)}
+    select.control{padding-right:27px;max-width:160px}
+    .layout-toggle{display:flex;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--surface-raised);margin-left:auto}
+    .layout-button{width:26px;height:24px;display:grid;place-items:center;border:0;border-radius:4px;background:transparent;color:var(--muted)}
+    .layout-button:hover{color:var(--text-soft)}
+    .layout-button.active{background:var(--surface);color:var(--text);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+    .layout-button svg{width:13px;height:13px}
+    .filter-summary{padding:0 24px 10px;color:var(--muted);font-size:11px}
+
+    .issue-list{border-top:1px solid var(--line)}
+    .status-group{border-bottom:1px solid var(--line)}
+    .status-heading{height:36px;display:flex;align-items:center;gap:8px;padding:0 20px;background:var(--surface-raised);border-bottom:1px solid var(--line);position:sticky;top:52px;z-index:4}
+    .status-dot{width:12px;height:12px;border:1.5px solid currentColor;border-radius:50%;position:relative;color:#9a9aa2;flex:0 0 auto}
+    .status-dot.started{border-style:dashed;color:#746fbb}
+    .status-dot.completed{background:#75a88d;border-color:#75a88d}
+    .status-dot.completed:after{content:"";position:absolute;left:3px;top:1px;width:3px;height:6px;border:solid #fff;border-width:0 1.5px 1.5px 0;transform:rotate(45deg)}
+    .status-dot.canceled{border-color:#b6b6bc}
+    .status-dot.canceled:after{content:"";position:absolute;left:2px;right:2px;top:4px;border-top:1px solid currentColor;transform:rotate(-35deg)}
+    .status-name{font-size:11.5px;font-weight:650}
+    .status-count{color:var(--muted);font-size:10.5px;font-variant-numeric:tabular-nums}
+    .status-add{margin-left:auto;width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:17px;line-height:1}
+    .status-add:hover{background:var(--pressed);color:var(--text)}
+    .issue-row{width:100%;min-height:42px;display:grid;grid-template-columns:18px 62px minmax(180px,1fr) minmax(0,auto) 130px 28px;align-items:center;gap:8px;padding:6px 20px;border:0;border-bottom:1px solid #eeeeef;background:var(--surface);text-align:left}
+    .issue-row:last-child{border-bottom:0}
+    .issue-row:hover{background:var(--hover)}
+    .priority-mark{width:14px;height:14px;display:flex;align-items:flex-end;gap:1.5px;color:#a3a3aa}
+    .priority-mark i{display:block;width:2px;border-radius:1px;background:currentColor}
+    .priority-mark i:nth-child(1){height:4px}.priority-mark i:nth-child(2){height:7px}.priority-mark i:nth-child(3){height:10px}
+    .priority-mark.none{opacity:.35}.priority-mark.low i:nth-child(n+2){opacity:.18}.priority-mark.medium i:nth-child(3){opacity:.18}
+    .priority-mark.high{color:var(--warning)}.priority-mark.urgent{color:var(--danger)}
+    .issue-id{color:var(--muted);font:11px/1.2 ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums}
+    .issue-title{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--text)}
+    .row-labels{display:flex;justify-content:flex-end;gap:4px;min-width:0;overflow:hidden}
+    .label-chip{display:inline-flex;align-items:center;gap:4px;max-width:120px;height:20px;padding:0 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface-raised);color:var(--text-soft);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .label-dot{width:5px;height:5px;border-radius:50%;background:var(--label-color,#8d8d95);flex:0 0 auto}
+    .assignee-cell{min-width:0;display:flex;align-items:center;justify-content:flex-end;gap:6px;color:var(--muted);font-size:10.5px}
+    .assignee-cell span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .mini-avatar{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;background:#e8e8ea;color:#626269;font-size:8px;font-weight:700;text-transform:uppercase;flex:0 0 auto}
+    .row-signal{display:grid;place-items:center;width:20px;height:20px;border-radius:5px;color:var(--muted)}
+    .row-signal.blocked{background:var(--danger-soft);color:var(--danger)}
+    .row-empty{height:52px;display:flex;align-items:center;padding:0 58px;color:var(--faint);font-size:11.5px;background:var(--surface)}
+    .zero-state{min-height:360px;display:grid;place-items:center;text-align:center;color:var(--muted)}
+    .zero-state strong{display:block;margin-bottom:4px;color:var(--text-soft);font-weight:600}
+
+    .board-layout{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(255px,1fr);gap:10px;padding:2px 20px 24px;overflow-x:auto;min-height:calc(100vh - 168px);background:var(--canvas);border-top:1px solid var(--line)}
+    .board-column{min-width:0}
+    .column-heading{height:42px;display:flex;align-items:center;gap:8px;padding:0 7px;color:var(--text-soft);font-size:11.5px;font-weight:650}
+    .column-heading .status-count{margin-left:auto}
+    .board-card{display:block;width:100%;padding:10px 11px;margin-bottom:7px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);text-align:left;box-shadow:0 1px 1px rgba(0,0,0,.02)}
+    .board-card:hover{border-color:var(--line-strong);box-shadow:0 2px 6px rgba(0,0,0,.045)}
+    .board-card-title{margin:7px 0 10px;font-size:12.5px;line-height:1.45}
+    .board-card-meta{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:10.5px}
+    .board-card-meta .mini-avatar{margin-left:auto}
+
+    .activity-page{max-width:980px;padding:24px 28px 60px}
+    .page-heading{margin-bottom:22px}
+    .page-heading h1{font-size:20px;letter-spacing:-.025em;margin:0 0 4px;font-weight:650}
+    .page-heading p{margin:0;color:var(--muted);font-size:12px}
+    .activity-feed{border-top:1px solid var(--line)}
+    .activity-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:11px;align-items:start;padding:12px 4px;border-bottom:1px solid var(--line)}
+    .activity-copy{min-width:0;color:var(--text-soft);font-size:12px}
+    .activity-copy strong{color:var(--text);font-weight:600}
+    .activity-ref{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
+    .activity-time{color:var(--muted);font-size:10.5px;white-space:nowrap}
+
+    .issue-page{min-height:calc(100vh - 52px)}
+    .issue-toolbar{height:42px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11.5px}
+    .back-button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 7px;border:0;border-radius:5px;background:transparent;color:var(--text-soft)}
+    .back-button:hover{background:var(--hover);color:var(--text)}
+    .back-button svg{width:13px;height:13px}
+    .issue-toolbar-id{margin-left:8px;padding-left:12px;border-left:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .issue-grid{display:grid;grid-template-columns:minmax(0,760px) 260px;justify-content:center;gap:48px;padding:38px 36px 80px}
+    .issue-document{min-width:0}
+    .issue-kicker{display:flex;align-items:center;gap:8px;margin-bottom:11px;color:var(--muted);font-size:11px}
+    .issue-kicker .label-chip{height:19px}
+    .issue-title-heading{margin:0 0 24px;font-size:28px;line-height:1.24;letter-spacing:-.032em;font-weight:640;color:#202024}
+    .markdown{font-size:14px;line-height:1.7;color:#3c3c42;overflow-wrap:anywhere}
+    .markdown.empty-copy{color:var(--muted);font-style:italic}
+    .markdown h1,.markdown h2,.markdown h3{color:var(--text);line-height:1.35;letter-spacing:-.01em}
+    .markdown h1{font-size:21px;margin:24px 0 8px}.markdown h2{font-size:17px;margin:21px 0 7px}.markdown h3{font-size:14px;margin:18px 0 6px}
+    .markdown code{padding:2px 5px;border:1px solid var(--line);border-radius:4px;background:var(--surface-raised);font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+    .markdown .bullet{display:flex;gap:8px;margin:4px 0}.markdown .bullet:before{content:"•";color:var(--muted)}
+    .detail-section{padding:24px 0;border-top:1px solid var(--line)}
+    .detail-section:first-of-type{margin-top:34px}
+    .section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}
+    .section-heading h2{margin:0;font-size:12px;font-weight:650;color:var(--text-soft)}
+    .section-count{color:var(--muted);font-size:10.5px}
+    .relation-list{display:grid;gap:5px}
+    .relation-row{display:flex;align-items:center;gap:8px;min-height:30px;padding:4px 6px;border-radius:5px;color:var(--text-soft);font-size:11.5px}
+    .relation-row:hover{background:var(--hover)}
+    .relation-row .button{margin-left:auto}
+    .issue-link{border:0;background:transparent;padding:0;color:var(--text);font-weight:550;text-align:left}
+    .issue-link:hover{text-decoration:underline}
+    .relation-kind{min-width:66px;color:var(--muted);font-size:10.5px}
+    .comments{display:grid;gap:17px}
+    .comment{display:grid;grid-template-columns:26px minmax(0,1fr);gap:9px}
+    .comment-head{display:flex;align-items:baseline;gap:7px;margin-bottom:4px}
+    .comment-head strong{font-size:11.5px;font-weight:650}
+    .comment-head time{color:var(--muted);font-size:10px}
+    .comment-body{font-size:12.5px;line-height:1.6;color:var(--text-soft)}
+    .composer{display:flex;gap:8px;margin-top:16px}
+    .composer input{flex:1;min-width:0}
+    .empty-inline{padding:7px 0;color:var(--muted);font-size:11.5px}
+    .add-row{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
+    .add-row .control{min-width:110px;flex:1}
+    .issue-properties{align-self:start;position:sticky;top:84px;border-left:1px solid var(--line);padding-left:24px}
+    .properties-heading{margin:0 0 14px;color:var(--muted);font-size:10px;font-weight:650;text-transform:uppercase;letter-spacing:.08em}
+    .property{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;min-height:38px;gap:10px;font-size:11.5px}
+    .property>span{color:var(--muted)}
+    .property select{width:100%;height:28px;border:0;border-radius:5px;background:transparent;padding:0 5px;outline:none;font-size:11.5px}
+    .property select:hover{background:var(--hover)}
+    .property select:focus{box-shadow:0 0 0 2px var(--accent-soft)}
+    .property-labels{padding:8px 0 10px}
+    .label-picker{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
+    .label-button{height:22px;display:inline-flex;align-items:center;gap:5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--muted);font-size:10px}
+    .label-button.active{border-color:#cbd0f7;background:var(--accent-soft);color:var(--text-soft)}
+    .claim-action{width:100%;margin-top:14px}
+    .mobile-properties{display:none}
+
+    .login{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:20px;background:var(--canvas)}
+    .login-card{width:min(380px,100%);padding:30px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:0 18px 50px rgba(0,0,0,.08)}
+    .login-brand{display:flex;align-items:center;gap:9px;margin-bottom:28px;font-weight:650}
+    .login-card h1{font-size:20px;letter-spacing:-.025em;margin:0 0 7px}
+    .login-card p{margin:0 0 19px;color:var(--muted);font-size:12px;line-height:1.55}
+    .login-card label{display:block;margin-bottom:7px;color:var(--text-soft);font-size:11px;font-weight:600}
+    .login-card .control{width:100%;height:36px;margin-bottom:10px}
+    .login-card .button{width:100%;height:34px}
+    .error{min-height:18px;margin-top:9px;color:var(--danger);font-size:11px}
+
+    .dialog{width:min(620px,calc(100vw - 28px));max-height:calc(100vh - 40px);padding:0;border:1px solid var(--line-strong);border-radius:10px;background:var(--surface);color:var(--text);box-shadow:0 24px 80px rgba(0,0,0,.18)}
+    .dialog::backdrop{background:rgba(28,28,31,.36);backdrop-filter:blur(1px)}
+    .dialog-form{display:flex;flex-direction:column;max-height:calc(100vh - 40px)}
+    .dialog-header{display:flex;align-items:center;padding:15px 17px;border-bottom:1px solid var(--line)}
+    .dialog-header h2{margin:0;font-size:13px;font-weight:650}
+    .dialog-close{margin-left:auto;width:28px;height:28px;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:18px}
+    .dialog-close:hover{background:var(--hover);color:var(--text)}
+    .dialog-content{padding:18px;overflow:auto}
+    .field{display:block;margin-bottom:15px;color:var(--text-soft);font-size:11px;font-weight:600}
+    .field .control{display:block;width:100%;height:34px;margin-top:6px;font-weight:400}
+    .field textarea.control{height:120px;padding:9px;resize:vertical;line-height:1.5}
+    .field-row{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+    .choice-list{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+    .label-choice{display:inline-flex;align-items:center;gap:6px;padding:5px 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface-raised);font-size:10.5px;font-weight:500}
+    .label-choice input{accent-color:var(--accent)}
+    .dialog-footer{display:flex;align-items:center;justify-content:flex-end;gap:7px;padding:12px 17px;border-top:1px solid var(--line)}
+    .dialog-error{margin-right:auto;color:var(--danger);font-size:11px}
+    .toast{position:fixed;right:18px;bottom:18px;z-index:70;max-width:min(360px,calc(100vw - 36px));padding:9px 12px;border:1px solid #3b3b40;border-radius:7px;background:#29292d;color:#fff;font-size:11.5px;box-shadow:0 8px 28px rgba(0,0,0,.16)}
+
+    @media(max-width:900px){
+      :root{--sidebar-width:186px}
+      .issue-grid{grid-template-columns:minmax(0,1fr) 230px;gap:30px;padding-left:28px;padding-right:28px}
+      .issue-row{grid-template-columns:18px 62px minmax(160px,1fr) minmax(0,auto) 28px}.assignee-cell{display:none}
+    }
+    @media(max-width:720px){
+      .app{display:block;padding-bottom:52px}.sidebar{position:fixed;z-index:30;top:auto;bottom:0;left:0;right:0;width:auto;height:52px;display:block;padding:4px 8px;border:0;border-top:1px solid var(--line);background:rgba(247,247,248,.96);backdrop-filter:blur(14px)}
+      .brand,.board-switcher,.nav-label,.identity{display:none}.primary-nav{display:grid;grid-template-columns:1fr 1fr;gap:6px;height:100%;max-width:360px;margin:auto}.nav-item{height:44px;justify-content:center;flex-direction:column;gap:1px;padding:0;font-size:9px}.nav-icon{width:15px;height:15px}.nav-count{display:none}
+      .workspace-header{height:48px;padding:0 12px}.content{min-height:calc(100vh - 100px)}.workspace-title .eyebrow,.refresh-label{display:none}
+      .issues-header{padding:17px 14px 10px}.issues-heading{margin-bottom:13px}.issues-heading h1{font-size:19px}.issues-heading p{display:none}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:7px}.search-wrap{min-width:0;max-width:none;grid-column:1/3}.toolbar select{width:100%;max-width:none}.layout-toggle{margin-left:0;grid-column:3;grid-row:1}.filter-summary{padding:0 14px 8px}#milestoneFilter{grid-column:1}#assigneeFilter{grid-column:2}
+      .status-heading{top:48px;padding:0 12px}.issue-row{min-height:48px;grid-template-columns:18px 55px minmax(0,1fr) 22px;gap:6px;padding:6px 12px}.row-labels,.assignee-cell{display:none}.issue-title{font-size:12.5px}.row-empty{padding-left:44px}
+      .board-layout{grid-auto-flow:row;grid-auto-columns:auto;padding:0 10px 20px;min-height:0}.board-column{width:100%}.column-heading{position:sticky;top:48px;z-index:3;background:var(--canvas)}
+      .activity-page{padding:18px 15px 50px}.activity-row{grid-template-columns:26px minmax(0,1fr)}.activity-time{grid-column:2}
+      .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-properties{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .property{grid-template-columns:78px minmax(0,1fr)}
+      .composer{align-items:flex-end}.composer input{height:36px}.add-row{display:grid;grid-template-columns:1fr auto}.add-row .control{min-width:0}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}.dialog-form{max-height:calc(100vh - 20px)}.field-row{grid-template-columns:1fr}.toast{bottom:66px}
+    }
+    @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
   </style>
 </head>
 <body>
+<a class="skip-link" href="#mainContent">Skip to content</a>
+
 <div class="login" id="login">
   <form class="login-card" id="loginForm">
-    <div class="brand"><span class="logo">&#9670;</span><span>Local Board</span></div>
-    <h2>Connect to this repository</h2>
-    <p class="muted">Enter an actor token created with <code>local-board actor</code>. The token stays in this browser.</p>
-    <input id="tokenInput" type="password" placeholder="Bearer token" required>
-    <button class="btn" style="width:100%">Open board</button>
-    <div class="error" id="loginError"></div>
+    <div class="login-brand"><span class="logo" aria-hidden="true"></span><span>Local Board</span></div>
+    <h1>Open this repository</h1>
+    <p>Connect with an actor token. It stays in this browser and is only sent to this local board.</p>
+    <label for="tokenInput">Actor token</label>
+    <input class="control" id="tokenInput" type="password" autocomplete="current-password" placeholder="Paste token" required>
+    <button class="button primary" type="submit">Open board</button>
+    <div class="error" id="loginError" role="alert"></div>
   </form>
 </div>
+
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><span class="logo">&#9670;</span><span class="brand-text">Local Board</span></div>
-    <button class="nav active" data-view="board"><span>&#9638;</span><label>Board</label></button>
-    <button class="nav" data-view="activity"><span>&#9121;</span><label>Activity</label></button>
-    <div class="identity"><strong id="actorName">&mdash;</strong><small id="actorKind">Not connected</small></div>
+    <div class="brand"><span class="logo" aria-hidden="true"></span><span>Local Board</span></div>
+    <div class="board-switcher" aria-label="Current board">
+      <span class="board-mark" id="boardMark">LB</span>
+      <span class="board-copy"><strong id="boardName">Repository</strong><small id="boardPrefix">Local workspace</small></span>
+    </div>
+    <div class="nav-label">Workspace</div>
+    <nav class="primary-nav" aria-label="Primary navigation">
+      <button class="nav-item active" type="button" data-view="issues" aria-current="page">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M2.5 3.5h11M2.5 8h11M2.5 12.5h11" stroke="currentColor" stroke-linecap="round"/><circle cx="4" cy="3.5" r="1.5" fill="currentColor"/><circle cx="4" cy="8" r="1.5" fill="currentColor"/><circle cx="4" cy="12.5" r="1.5" fill="currentColor"/></svg>
+        <span>Issues</span><span class="nav-count" id="issueCount">0</span>
+      </button>
+      <button class="nav-item" type="button" data-view="activity">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.25A5.75 5.75 0 1 1 2.25 8M8 4.5V8l2.25 1.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Activity</span>
+      </button>
+    </nav>
+    <div class="identity">
+      <span class="avatar" id="actorAvatar">—</span>
+      <span class="identity-copy"><strong id="actorName">Not connected</strong><small id="actorKind">Actor</small></span>
+    </div>
   </aside>
-  <main class="main">
-    <header class="topbar">
-      <div class="title"><h1 id="pageTitle">Board</h1><div class="muted" id="subtitle">Repository work shared by humans and agents</div></div>
-      <div class="actions"><button class="btn secondary" id="refreshBtn">&#8635; Refresh</button><button class="btn" id="newIssueBtn">&#65291; New issue</button></div>
-    </header>
-    <section id="boardView">
-      <div class="toolbar">
-        <input class="select" id="searchInput" placeholder="Search title or identifier&hellip;">
-        <select class="select" id="milestoneFilter"><option value="">All milestones</option></select>
-        <select class="select" id="assigneeFilter"><option value="">All assignees</option></select>
-        <span class="muted" id="boardMeta"></span>
+
+  <main class="workspace" id="mainContent" tabindex="-1">
+    <header class="workspace-header">
+      <div class="workspace-title"><span class="eyebrow" id="headerBoard">Board</span><span aria-hidden="true">/</span><span id="pageTitle">Issues</span></div>
+      <div class="workspace-actions">
+        <button class="button quiet icon-only" id="refreshBtn" type="button" aria-label="Refresh board" title="Refresh board">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.1 5.2A5.5 5.5 0 1 0 13.2 10M13.1 2.7v2.8h-2.8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="button primary" id="newIssueBtn" type="button">
+          <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-linecap="round"/></svg>
+          <span>New issue</span>
+        </button>
       </div>
-      <div class="stats" id="stats"></div>
-      <div class="board" id="board"></div>
-    </section>
-    <section id="activityView" class="hidden"><div class="panel" id="activityPanel"></div></section>
+    </header>
+
+    <div class="content">
+      <section id="issuesView">
+        <div class="issues-header">
+          <div class="issues-heading"><div><h1>Issues</h1><p>Work shared by humans and agents in this repository.</p></div></div>
+          <div class="toolbar">
+            <label class="search-wrap">
+              <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="7" cy="7" r="4.25" stroke="currentColor"/><path d="m10.2 10.2 3 3" stroke="currentColor" stroke-linecap="round"/></svg>
+              <span class="hidden">Search issues</span>
+              <input class="control search" id="searchInput" type="search" placeholder="Search issues…" autocomplete="off">
+            </label>
+            <select class="control" id="milestoneFilter" aria-label="Filter by milestone"><option value="">All milestones</option></select>
+            <select class="control" id="assigneeFilter" aria-label="Filter by assignee"><option value="">All assignees</option></select>
+            <div class="layout-toggle" role="group" aria-label="Issue layout">
+              <button class="layout-button active" type="button" data-layout="list" aria-pressed="true" title="List view">
+                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M4.5 4h8M4.5 8h8M4.5 12h8" stroke="currentColor" stroke-linecap="round"/><circle cx="2.25" cy="4" r=".75" fill="currentColor"/><circle cx="2.25" cy="8" r=".75" fill="currentColor"/><circle cx="2.25" cy="12" r=".75" fill="currentColor"/></svg>
+              </button>
+              <button class="layout-button" type="button" data-layout="board" aria-pressed="false" title="Board view">
+                <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><rect x="2" y="2.5" width="5" height="11" rx="1" stroke="currentColor"/><rect x="9" y="2.5" width="5" height="7" rx="1" stroke="currentColor"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="filter-summary" id="filterSummary">0 issues</div>
+        <div class="issue-list" id="issueList"></div>
+        <div class="board-layout hidden" id="issueBoard"></div>
+      </section>
+
+      <section class="activity-page hidden" id="activityView">
+        <div class="page-heading"><h1>Activity</h1><p>A chronological record of changes across the board.</p></div>
+        <div class="activity-feed" id="activityFeed"></div>
+      </section>
+
+      <section class="issue-page hidden" id="issueView" aria-labelledby="issueTitleHeading">
+        <div class="issue-toolbar">
+          <button class="back-button" type="button" data-action="back-to-issues">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m9.5 3.5-4 4 4 4" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Issues
+          </button>
+          <span class="issue-toolbar-id" id="issueToolbarId"></span>
+        </div>
+        <div class="issue-grid">
+          <article class="issue-document" id="issueDocument"></article>
+          <aside class="issue-properties" id="issueProperties" aria-label="Issue properties"></aside>
+        </div>
+      </section>
+    </div>
   </main>
 </div>
-<dialog class="dialog" id="issueDialog">
-  <form class="dialog-body" id="issueForm">
-    <h2>New issue</h2>
-    <label class="field">Title<input id="issueTitle" required maxlength="200"></label>
-    <label class="field">Description (Markdown &mdash; use <code>- [ ]</code> for checklist items)<textarea id="issueDescription" placeholder="Context, scope, acceptance criteria, constraints"></textarea></label>
-    <div class="grid2">
-      <label class="field">Priority<select id="issuePriority"><option value="none">none</option><option value="low">low</option><option value="medium" selected>medium</option><option value="high">high</option><option value="urgent">urgent</option></select></label>
-      <label class="field">Milestone<select id="issueMilestone"><option value="">No milestone</option></select></label>
+
+<dialog class="dialog" id="issueDialog" aria-labelledby="newIssueHeading">
+  <form class="dialog-form" id="issueForm">
+    <div class="dialog-header"><h2 id="newIssueHeading">Create issue</h2><button class="dialog-close" type="button" data-close="issueDialog" aria-label="Close">×</button></div>
+    <div class="dialog-content">
+      <label class="field" for="issueTitle">Title<input class="control" id="issueTitle" required maxlength="200" placeholder="What needs to be done?"></label>
+      <label class="field" for="issueDescription">Description<textarea class="control" id="issueDescription" placeholder="Add context, scope, or constraints"></textarea></label>
+      <div class="field-row">
+        <label class="field" for="issuePriority">Priority<select class="control" id="issuePriority"><option value="none">No priority</option><option value="low">Low</option><option value="medium" selected>Medium</option><option value="high">High</option><option value="urgent">Urgent</option></select></label>
+        <label class="field" for="issueMilestone">Milestone<select class="control" id="issueMilestone"><option value="">No milestone</option></select></label>
+        <label class="field" for="issueAssignee">Assignee<select class="control" id="issueAssignee"><option value="">Unassigned</option></select></label>
+      </div>
+      <div class="field">Labels<div class="choice-list" id="issueLabelPicker"></div></div>
     </div>
-    <label class="field">Labels<div class="badges" id="issueLabelPicker"></div></label>
-    <div class="dialog-actions"><button type="button" class="btn secondary" data-close="issueDialog">Cancel</button><button class="btn">Create issue</button></div>
-    <div class="error" id="issueError"></div>
+    <div class="dialog-footer"><div class="dialog-error" id="issueError" role="alert"></div><button class="button" type="button" data-close="issueDialog">Cancel</button><button class="button primary" type="submit">Create issue</button></div>
   </form>
 </dialog>
-<dialog class="dialog wide" id="detailDialog"><div class="dialog-body" id="detailBody"></div></dialog>
-<div class="toast hidden" id="toast"></div>
+
+<div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
+
 <script>
-const $=s=>document.querySelector(s),$$=s=>[...document.querySelectorAll(s)];
+const $=selector=>document.querySelector(selector),$$=selector=>[...document.querySelectorAll(selector)];
 let token='';
 try{token=localStorage.getItem('localBoardToken')||''}catch{token=''}
-let data={},identity=null,currentIssue=null,currentView='board';
+let data={},identity=null,currentIssue=null,currentView='issues';
+let currentLayout='list';
 
-function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
+function initials(name){return String(name||'?').split(/\s+/).map(part=>part[0]).join('').slice(0,2)}
+function canWrite(){return identity?.role!=='viewer'}
+function safeExternalUrl(value){
+  try{const url=new URL(value);return ['http:','https:'].includes(url.protocol)?url.href:''}catch{return ''}
+}
+function relativeTime(value){
+  const date=new Date(value),seconds=Math.round((date-Date.now())/1000),abs=Math.abs(seconds);
+  const formatter=new Intl.RelativeTimeFormat(undefined,{numeric:'auto'});
+  if(abs<60)return formatter.format(seconds,'second');
+  if(abs<3600)return formatter.format(Math.round(seconds/60),'minute');
+  if(abs<86400)return formatter.format(Math.round(seconds/3600),'hour');
+  if(abs<604800)return formatter.format(Math.round(seconds/86400),'day');
+  return date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:date.getFullYear()===new Date().getFullYear()?undefined:'numeric'});
+}
+function humanize(value){return String(value||'updated').replaceAll('_',' ').replace(/^./,char=>char.toUpperCase())}
 
 async function api(path,options={}){
-  const response=await fetch(path,{...options,headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json',...(options.headers||{})}});
+  const response=await fetch(path,{...options,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(options.headers||{})}});
   let body={};
   if(response.status!==204){try{body=await response.json()}catch{}}
   if(!response.ok){
@@ -172,255 +405,308 @@ async function api(path,options={}){
 
 function notify(message){
   toast.textContent=message;toast.classList.remove('hidden');
-  clearTimeout(notify._t);notify._t=setTimeout(()=>toast.classList.add('hidden'),2400);
+  clearTimeout(notify._timer);notify._timer=setTimeout(()=>toast.classList.add('hidden'),3200);
 }
 
 function markdown(value){
-  let out=esc(value||'_No description._');
-  out=out.replace(/`([^`]+)`/g,'<code>$1</code>');
-  out=out.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
-  out=out.replace(/^### (.+)$/gm,'<h3>$1</h3>');
-  out=out.replace(/^## (.+)$/gm,'<h2>$1</h2>');
-  out=out.replace(/^# (.+)$/gm,'<h1>$1</h1>');
-  out=out.replace(/^-\s*\[x\]\s*(.+)$/gim,'<label class="check done"><input type="checkbox" checked disabled><span>$1</span></label>');
-  out=out.replace(/^-\s*\[ \]\s*(.+)$/gm,'<label class="check"><input type="checkbox" disabled><span>$1</span></label>');
-  out=out.replace(/^- (.+)$/gm,'<div class="bullet">&bull; $1</div>');
-  out=out.replace(/\n/g,'<br>');
-  return out;
+  if(!value)return '<div class="markdown empty-copy">No description.</div>';
+  let output=esc(value);
+  output=output.replace(/`([^`]+)`/g,'<code>$1</code>');
+  output=output.replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>');
+  output=output.replace(/^### (.+)$/gm,'<h3>$1</h3>');
+  output=output.replace(/^## (.+)$/gm,'<h2>$1</h2>');
+  output=output.replace(/^# (.+)$/gm,'<h1>$1</h1>');
+  output=output.replace(/^- (.+)$/gm,'<div class="bullet"><span>$1</span></div>');
+  output=output.replace(/\n/g,'<br>');
+  return `<div class="markdown">${output}</div>`;
 }
 
 async function loadAll(){
   const [me,dashboard]=await Promise.all([api('/api/me'),api('/api/dashboard')]);
   identity=me;data=dashboard;
   login.classList.add('hidden');
-  actorName.textContent=identity.name;
-  actorKind.textContent=identity.kind+' · '+identity.role;
+  render();
+  await restoreLocation();
+}
+
+async function reloadBoard(){
+  data=await api('/api/dashboard');
   render();
 }
-async function reloadBoard(){data=await api('/api/dashboard');render()}
 
 function statusesSorted(){return [...(data.board?.statuses||[])].sort((a,b)=>a.position-b.position)}
-function findIssueRef(id){return (data.issues||[]).find(x=>x.id===id)}
+function findIssueRef(id){return (data.issues||[]).find(issue=>issue.id===id)}
+function milestoneName(id){return (data.board?.milestones||[]).find(item=>item.id===id)?.name||''}
+function labelCatalog(name){return (data.board?.labels||[]).find(label=>label.name===name||label.key===name)}
 
-function render(){renderFilters();renderStats();renderBoard();renderActivity()}
+function render(){
+  renderShell();renderFilters();renderIssues();renderActivity();
+  if(currentIssue)renderDetail();
+}
+
+function renderShell(){
+  const board=data.board||{};
+  boardName.textContent=board.name||'Repository';boardPrefix.textContent=board.prefix?`${board.prefix} board`:'Local workspace';
+  boardMark.textContent=(board.prefix||'LB').slice(0,3);headerBoard.textContent=board.name||'Board';
+  issueCount.textContent=(data.issues||[]).length;
+  actorName.textContent=identity?.name||'Not connected';actorAvatar.textContent=initials(identity?.name);
+  actorKind.textContent=identity?`${identity.kind} · ${identity.role}`:'Actor';
+}
 
 function renderFilters(){
-  const milestones=data.board?.milestones||[];
-  const prevM=milestoneFilter.value;
-  milestoneFilter.innerHTML='<option value="">All milestones</option>'+milestones.map(m=>`<option value="${m.id}" ${String(m.id)===prevM?'selected':''}>${esc(m.name)}</option>`).join('');
-  const actors=data.actors||[];
-  const prevA=assigneeFilter.value;
-  assigneeFilter.innerHTML='<option value="">All assignees</option>'+actors.map(a=>`<option value="${a.id}" ${String(a.id)===prevA?'selected':''}>${esc(a.name)}</option>`).join('');
-  boardMeta.textContent=data.board?`${data.board.prefix} · ${data.board.name}${data.board.config_digest?' · managed by project.toml':''}`:'';
+  const previousMilestone=milestoneFilter.value,previousAssignee=assigneeFilter.value;
+  milestoneFilter.innerHTML='<option value="">All milestones</option>'+(data.board?.milestones||[]).map(item=>`<option value="${item.id}" ${String(item.id)===previousMilestone?'selected':''}>${esc(item.name)}</option>`).join('');
+  assigneeFilter.innerHTML='<option value="">All assignees</option>'+(data.actors||[]).map(actor=>`<option value="${actor.id}" ${String(actor.id)===previousAssignee?'selected':''}>${esc(actor.name)}</option>`).join('');
 }
 
 function filteredIssues(){
-  const q=(searchInput.value||'').trim().toLowerCase();
-  const milestone=milestoneFilter.value,assignee=assigneeFilter.value;
-  return (data.issues||[]).filter(i=>
-    (!q||i.title.toLowerCase().includes(q)||i.identifier.toLowerCase().includes(q))&&
-    (!milestone||String(i.milestone_id)===milestone)&&
-    (!assignee||String(i.assignee_id)===assignee)
-  );
+  const query=(searchInput.value||'').trim().toLowerCase(),milestone=milestoneFilter.value,assignee=assigneeFilter.value;
+  return (data.issues||[]).filter(issue=>(!query||issue.title.toLowerCase().includes(query)||issue.identifier.toLowerCase().includes(query)||(issue.labels||[]).some(label=>String(label).toLowerCase().includes(query)))&&(!milestone||String(issue.milestone_id)===milestone)&&(!assignee||String(issue.assignee_id)===assignee));
 }
 
-function card(issue){
-  const labels=(issue.labels||[]).map(l=>`<span class="chip" style="background:${esc(l.color)}22;border-color:${esc(l.color)}55;color:${esc(l.color)}">${esc(l.name)}</span>`).join('');
-  const badges=`${issue.claim_expires_at?'<span class="badge claimed">claimed</span>':''}${issue.blocked?'<span class="badge blocked">blocked</span>':''}`;
-  return `<article class="card" data-ref="${esc(issue.identifier)}">${badges?`<div class="badges">${badges}</div>`:''}${labels?`<div class="badges">${labels}</div>`:''}<div class="card-title">${esc(issue.title)}</div><div class="meta"><span>${esc(issue.identifier)} · r${issue.revision}</span><span class="priority-${esc(issue.priority)}">${esc(issue.priority)}</span></div></article>`;
+function statusDot(status){return `<span class="status-dot ${esc(status.category)}" aria-hidden="true"></span>`}
+function priorityMark(priority){return `<span class="priority-mark ${esc(priority)}" title="${esc(humanize(priority))} priority" aria-label="${esc(humanize(priority))} priority"><i></i><i></i><i></i></span>`}
+function listLabelChips(issue){
+  return (issue.labels||[]).slice(0,2).map(name=>{const label=labelCatalog(name);return `<span class="label-chip" title="${esc(label?.name||name)}"><span class="label-dot" style="--label-color:${esc(label?.color||'#8d8d95')}"></span>${esc(label?.name||name)}</span>`}).join('');
 }
 
-function renderBoard(){
-  const issues=filteredIssues();
-  const cols=statusesSorted();
-  board.innerHTML=cols.length?cols.map(s=>{
-    const items=issues.filter(i=>i.status===s.name);
-    return `<div class="column"><div class="column-head"><span>${esc(s.name)}</span><span class="count">${items.length}</span></div>${items.map(card).join('')||'<div class="empty">No issues</div>'}</div>`;
-  }).join(''):'<div class="empty">No statuses configured for this board.</div>';
+function issueRow(issue){
+  const assignee=issue.assignee?`<span>${esc(issue.assignee)}</span><span class="mini-avatar">${esc(initials(issue.assignee))}</span>`:'<span>Unassigned</span>';
+  const signal=issue.blocked?'<span class="row-signal blocked" title="Blocked" aria-label="Blocked">!</span>':issue.claim_expires_at?'<span class="row-signal" title="Claimed" aria-label="Claimed">●</span>':'<span></span>';
+  return `<button class="issue-row" type="button" data-ref="${esc(issue.identifier)}">${priorityMark(issue.priority)}<span class="issue-id">${esc(issue.identifier)}</span><span class="issue-title">${esc(issue.title)}</span><span class="row-labels">${listLabelChips(issue)}</span><span class="assignee-cell">${assignee}</span>${signal}</button>`;
 }
 
-function renderStats(){
-  const issues=filteredIssues();
-  const started=new Set(statusesSorted().filter(s=>s.category==='started').map(s=>s.name));
-  stats.innerHTML=`<div class="stat"><b>${issues.length}</b><span>Total issues</span></div><div class="stat"><b>${issues.filter(i=>started.has(i.status)).length}</b><span>In progress</span></div><div class="stat"><b>${issues.filter(i=>i.blocked).length}</b><span>Blocked</span></div><div class="stat"><b>${issues.filter(i=>i.priority==='urgent'||i.priority==='high').length}</b><span>High priority</span></div>`;
+function boardCard(issue){
+  return `<button class="board-card" type="button" data-ref="${esc(issue.identifier)}"><span class="issue-id">${esc(issue.identifier)}</span><div class="board-card-title">${esc(issue.title)}</div>${listLabelChips(issue)}<div class="board-card-meta">${priorityMark(issue.priority)}${issue.blocked?'<span style="color:var(--danger)">Blocked</span>':''}${issue.assignee?`<span class="mini-avatar" title="${esc(issue.assignee)}">${esc(initials(issue.assignee))}</span>`:''}</div></button>`;
+}
+
+function renderIssues(){
+  const issues=filteredIssues(),statuses=statusesSorted();
+  const filters=[];if(searchInput.value.trim())filters.push(`matching “${searchInput.value.trim()}”`);if(milestoneFilter.value)filters.push(milestoneName(+milestoneFilter.value));if(assigneeFilter.value)filters.push((data.actors||[]).find(actor=>String(actor.id)===assigneeFilter.value)?.name);
+  filterSummary.textContent=`${issues.length} ${issues.length===1?'issue':'issues'}${filters.length?' · '+filters.filter(Boolean).join(' · '):''}`;
+  issueList.innerHTML=statuses.length?statuses.map(status=>{
+    const items=issues.filter(issue=>issue.status===status.name);
+    const add=canWrite()?`<button class="status-add" type="button" data-new-status="${esc(status.name)}" aria-label="Create issue in ${esc(status.name)}">+</button>`:'';
+    return `<section class="status-group" aria-labelledby="status-${status.position}"><div class="status-heading">${statusDot(status)}<span class="status-name" id="status-${status.position}">${esc(status.name)}</span><span class="status-count">${items.length}</span>${add}</div>${items.map(issueRow).join('')||'<div class="row-empty">No issues</div>'}</section>`;
+  }).join(''):'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>';
+  issueBoard.innerHTML=statuses.length?statuses.map(status=>{
+    const items=issues.filter(issue=>issue.status===status.name);
+    return `<section class="board-column"><div class="column-heading">${statusDot(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span></div>${items.map(boardCard).join('')||'<div class="row-empty">No issues</div>'}</section>`;
+  }).join(''):'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>';
 }
 
 function renderActivity(){
-  activityPanel.innerHTML=(data.activity||[]).map(a=>`<div class="activity-row"><b>${esc(a.actor||'system')}</b><span>${esc(a.identifier||`${a.entity_type} #${a.entity_id}`)}</span><span>${esc(a.action)}</span><time>${esc(new Date(a.created_at).toLocaleString())}</time></div>`).join('')||'<div class="empty">No activity yet</div>';
+  activityFeed.innerHTML=(data.activity||[]).map(item=>{
+    const ref=item.identifier||`${item.entity_type} #${item.entity_id}`;
+    return `<div class="activity-row"><span class="mini-avatar">${esc(initials(item.actor||'system'))}</span><div class="activity-copy"><strong>${esc(item.actor||'System')}</strong> ${esc(humanize(item.action).toLowerCase())} <span class="activity-ref">${esc(ref)}</span></div><time class="activity-time" datetime="${esc(item.created_at)}" title="${esc(new Date(item.created_at).toLocaleString())}">${esc(relativeTime(item.created_at))}</time></div>`;
+  }).join('')||'<div class="zero-state"><div><strong>No activity yet</strong>Changes to issues will appear here.</div></div>';
 }
 
-function statusOptions(selected){return statusesSorted().map(s=>`<option value="${esc(s.name)}" ${s.name===selected?'selected':''}>${esc(s.name)}</option>`).join('')}
-function actorOptions(selected){return '<option value="">Unassigned</option>'+(data.actors||[]).map(a=>`<option value="${a.id}" ${selected===a.id?'selected':''}>${esc(a.name)}</option>`).join('')}
-function priorityOptions(selected){return ['none','low','medium','high','urgent'].map(p=>`<option value="${p}" ${p===selected?'selected':''}>${p}</option>`).join('')}
-function milestoneOptions(selected){return '<option value="">No milestone</option>'+(data.board?.milestones||[]).map(m=>`<option value="${m.id}" ${selected===m.id?'selected':''}>${esc(m.name)}</option>`).join('')}
-function labelChips(issue){
-  const active=new Set((issue.labels||[]).map(l=>l.id));
-  return (data.board?.labels||[]).map(l=>`<button type="button" class="chip ${active.has(l.id)?'active':''}" data-action="toggle-label" data-label="${l.id}" style="border-color:${esc(l.color)}99">${esc(l.name)}</button>`).join('')||'<span class="muted">No labels configured</span>';
+function statusOptions(selected){return statusesSorted().map(status=>`<option value="${esc(status.name)}" ${status.name===selected?'selected':''}>${esc(status.name)}</option>`).join('')}
+function actorOptions(selected){return '<option value="">Unassigned</option>'+(data.actors||[]).map(actor=>`<option value="${actor.id}" ${selected===actor.id?'selected':''}>${esc(actor.name)}</option>`).join('')}
+function priorityOptions(selected){return ['none','low','medium','high','urgent'].map(priority=>`<option value="${priority}" ${priority===selected?'selected':''}>${humanize(priority==='none'?'no priority':priority)}</option>`).join('')}
+function milestoneOptions(selected){return '<option value="">No milestone</option>'+(data.board?.milestones||[]).map(item=>`<option value="${item.id}" ${selected===item.id?'selected':''}>${esc(item.name)}</option>`).join('')}
+function detailLabels(issue){
+  const active=new Set((issue.labels||[]).map(label=>label.id));
+  return (data.board?.labels||[]).map(label=>`<button class="label-button ${active.has(label.id)?'active':''}" type="button" data-action="toggle-label" data-label="${label.id}" aria-pressed="${active.has(label.id)}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</button>`).join('')||'<span class="empty-inline">No labels configured</span>';
 }
-function issueLink(ref){return `<button type="button" class="link-btn" data-action="open-issue" data-ref="${esc(ref.identifier)}">${esc(ref.identifier)}</button> ${esc(ref.title)}`}
+function issueLink(issue){return `<button class="issue-link" type="button" data-action="open-issue" data-ref="${esc(issue.identifier)}"><span class="issue-id">${esc(issue.identifier)}</span> ${esc(issue.title)}</button>`}
 
-async function openDetail(ref){
-  try{currentIssue=await api('/api/issues/'+encodeURIComponent(ref));renderDetail();detailDialog.showModal()}
-  catch(err){notify(err.message)}
+function readOnlyProperties(issue){
+  const labels=(issue.labels||[]).map(label=>`<span class="label-chip"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None</span>';
+  return `<h2 class="properties-heading">Properties</h2>
+    <div class="property"><span>Status</span><strong>${esc(issue.status)}</strong></div>
+    <div class="property"><span>Assignee</span><strong>${esc(issue.assignee||'Unassigned')}</strong></div>
+    <div class="property"><span>Priority</span><strong>${esc(humanize(issue.priority==='none'?'no priority':issue.priority))}</strong></div>
+    <div class="property"><span>Milestone</span><strong>${esc(milestoneName(issue.milestone_id)||'No milestone')}</strong></div>
+    <div class="property-labels"><span class="muted">Labels</span><div class="label-picker">${labels}</div></div>`;
 }
-async function refreshDetail(){
-  currentIssue=await api('/api/issues/'+encodeURIComponent(currentIssue.identifier));
-  renderDetail();
-  await reloadBoard();
+
+function propertyMarkup(issue){
+  if(!canWrite())return readOnlyProperties(issue);
+  const mine=identity&&issue.assignee_id===identity.id;
+  return `<h2 class="properties-heading">Properties</h2>
+    <label class="property"><span>Status</span><select data-field="status">${statusOptions(issue.status)}</select></label>
+    <label class="property"><span>Assignee</span><select data-field="assignee_id">${actorOptions(issue.assignee_id)}</select></label>
+    <label class="property"><span>Priority</span><select data-field="priority">${priorityOptions(issue.priority)}</select></label>
+    <label class="property"><span>Milestone</span><select data-field="milestone_id">${milestoneOptions(issue.milestone_id)}</select></label>
+    <div class="property-labels"><span class="muted">Labels</span><div class="label-picker">${detailLabels(issue)}</div></div>
+    <button class="button ${mine?'':'primary'} claim-action" type="button" data-action="${mine?'release':'claim'}">${mine?'Release issue':'Claim issue'}</button>`;
 }
 
 function renderDetail(){
-  const i=currentIssue;
-  const mine=!!identity&&i.assignee_id===identity.id;
-  const parentRef=i.parent_id?findIssueRef(i.parent_id):null;
-  const parentHtml=i.parent_id?(parentRef?issueLink(parentRef):('#'+i.parent_id)):'';
-  const childrenHtml=(i.children||[]).map(c=>`<div>${issueLink(c)}</div>`).join('')||'<div class="muted">No sub-issues</div>';
-  const blockedByHtml=(i.blocked_by||[]).map(d=>`<div class="dep-row">${d.completed?'&check;':'&#9675;'} ${issueLink(d)}<button type="button" class="btn secondary small" data-action="remove-dependency" data-depends="${d.id}">remove</button></div>`).join('')||'<div class="muted">None</div>';
-  const blocksHtml=(i.blocks||[]).map(d=>`<div class="dep-row">${issueLink(d)}</div>`).join('')||'<div class="muted">None</div>';
-  const depOptions=(data.issues||[]).filter(x=>x.id!==i.id).map(x=>`<option value="${x.id}">${esc(x.identifier)} &mdash; ${esc(x.title)}</option>`).join('');
-  const gitLinksHtml=(i.git_links||[]).map(l=>`<div>&#9096; ${esc(l.kind)} · ${esc(l.ref)}${l.url?` · <a class="link" href="${esc(l.url)}" target="_blank" rel="noopener">open</a>`:''}</div>`).join('')||'<div class="muted">No Git links</div>';
-  const commentsHtml=(i.comments||[]).map(c=>`<div class="comment"><strong>${esc(c.author)}</strong><p>${markdown(c.body)}</p></div>`).join('')||'<div class="muted">No comments yet</div>';
+  const issue=currentIssue,parent=issue.parent_id?findIssueRef(issue.parent_id):null;
+  const children=(issue.children||[]).map(child=>`<div class="relation-row"><span class="relation-kind">Sub-issue</span>${issueLink(child)}</div>`).join('');
+  const blockedBy=(issue.blocked_by||[]).map(item=>`<div class="relation-row"><span class="relation-kind">Blocked by</span>${issueLink(item)}${canWrite()?`<button class="button quiet small" type="button" data-action="remove-dependency" data-depends="${item.id}" aria-label="Remove dependency">Remove</button>`:''}</div>`).join('');
+  const blocks=(issue.blocks||[]).map(item=>`<div class="relation-row"><span class="relation-kind">Blocks</span>${issueLink(item)}</div>`).join('');
+  const parentMarkup=parent?`<div class="relation-row"><span class="relation-kind">Parent</span>${issueLink(parent)}</div>`:'';
+  const dependencyOptions=(data.issues||[]).filter(item=>item.id!==issue.id).map(item=>`<option value="${item.id}">${esc(item.identifier)} — ${esc(item.title)}</option>`).join('');
+  const gitLinks=(issue.git_links||[]).map(link=>{
+    const safeUrl=safeExternalUrl(link.url);
+    return `<div class="relation-row"><span class="relation-kind">${esc(humanize(link.kind))}</span><span class="issue-id">${esc(link.ref)}</span>${safeUrl?`<a href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${esc(humanize(link.kind))} ${esc(link.ref)}">Open</a>`:''}</div>`;
+  }).join('');
+  const comments=(issue.comments||[]).map(comment=>`<article class="comment"><span class="mini-avatar">${esc(initials(comment.author))}</span><div><div class="comment-head"><strong>${esc(comment.author)}</strong><time datetime="${esc(comment.created_at)}">${esc(relativeTime(comment.created_at))}</time></div><div class="comment-body">${markdown(comment.body)}</div></div></article>`).join('');
+  const relationContent=parentMarkup+children+blockedBy+blocks;
+  const propertyContent=propertyMarkup(issue);
+  const dependencyForm=canWrite()?`<form class="add-row" data-form="dependency"><select class="control" name="depends_on" required><option value="">Add blocking issue…</option>${dependencyOptions}</select><button class="button small" type="submit">Add</button></form>`:'';
+  const gitLinkForm=canWrite()?`<form class="add-row" data-form="gitlink"><select class="control" name="kind"><option value="commit">Commit</option><option value="pr">Pull request</option><option value="mr">Merge request</option></select><input class="control" name="ref" placeholder="Reference" required><input class="control" name="url" type="url" placeholder="URL (optional)"><button class="button small" type="submit">Add</button></form>`:'';
+  const commentForm=canWrite()?`<form class="composer" data-form="comment"><input class="control" name="body" placeholder="Leave a comment…" aria-label="Comment" required><button class="button primary" type="submit">Send</button></form>`:'';
+  issueToolbarId.textContent=issue.identifier;
+  issueDocument.innerHTML=`<div class="issue-kicker">${statusDot({category:issue.category})}<span>${esc(issue.status)}</span>${issue.blocked?'<span class="label-chip" style="color:var(--danger)">Blocked</span>':''}</div>
+    <h1 class="issue-title-heading" id="issueTitleHeading">${esc(issue.title)}</h1>
+    ${markdown(issue.description)}
+    <details class="mobile-properties"><summary>Issue properties</summary><div style="padding-top:10px">${propertyContent}</div></details>
+    <section class="detail-section"><div class="section-heading"><h2>Relations</h2><span class="section-count">${(issue.children||[]).length+(issue.blocked_by||[]).length+(issue.blocks||[]).length+(parent?1:0)}</span></div><div class="relation-list">${relationContent||'<div class="empty-inline">No related issues.</div>'}</div>${dependencyForm}</section>
+    <section class="detail-section"><div class="section-heading"><h2>Git links</h2><span class="section-count">${(issue.git_links||[]).length}</span></div><div class="relation-list">${gitLinks||'<div class="empty-inline">No commits or pull requests linked.</div>'}</div>${gitLinkForm}</section>
+    <section class="detail-section"><div class="section-heading"><h2>Activity</h2><span class="section-count">${issue.comments_total||0} ${(issue.comments_total||0)===1?'comment':'comments'}</span></div><div class="comments">${comments||'<div class="empty-inline">No comments yet.</div>'}</div>${commentForm}</section>`;
+  issueProperties.innerHTML=propertyContent;
+}
 
-  detailBody.innerHTML=`<div class="detail-head"><div><div class="detail-id">${esc(i.identifier)} · revision ${i.revision}</div><h2>${esc(i.title)}</h2><div class="badges"><span class="badge priority-${esc(i.priority)}">${esc(i.priority)}</span>${i.blocked?'<span class="badge blocked">blocked</span>':''}${i.claim_expires_at?`<span class="badge claimed">claimed${mine?' by you':''}</span>`:''}</div></div><button type="button" class="btn secondary" data-action="close-detail">&times;</button></div>
-<div class="detail-grid">
-  <div>
-    <div class="markdown">${markdown(i.description)}</div>
-    ${parentHtml?`<div class="section"><h3>Parent</h3><div>${parentHtml}</div></div>`:''}
-    <div class="section"><h3>Sub-issues</h3>${childrenHtml}</div>
-    <div class="section"><h3>Comments</h3>${commentsHtml}<form class="inline-form" data-form="comment"><input name="body" placeholder="Write an update" required><button class="btn small">Comment</button></form></div>
-    <div class="section"><h3>Dependencies</h3><h4>Blocked by</h4>${blockedByHtml}<h4>Blocks</h4>${blocksHtml}<form class="inline-form" data-form="dependency"><select name="depends_on" required><option value="">Blocked by&hellip;</option>${depOptions}</select><button class="btn small">Add</button></form></div>
-    <div class="section"><h3>Git links</h3>${gitLinksHtml}<form class="inline-form" data-form="gitlink"><select name="kind"><option value="branch">branch</option><option value="commit">commit</option><option value="pr">pr</option><option value="mr">mr</option></select><input name="ref" placeholder="ref" required><input name="url" placeholder="URL (optional)"><button class="btn small">Add</button></form></div>
-  </div>
-  <aside class="side-fields">
-    <label class="field">Status<select data-field="status">${statusOptions(i.status)}</select></label>
-    <label class="field">Assignee<select data-field="assignee_id">${actorOptions(i.assignee_id)}</select></label>
-    <label class="field">Priority<select data-field="priority">${priorityOptions(i.priority)}</select></label>
-    <label class="field">Milestone<select data-field="milestone_id">${milestoneOptions(i.milestone_id)}</select></label>
-    <label class="field">Labels<div class="badges">${labelChips(i)}</div></label>
-    ${mine?'<button type="button" class="btn secondary" style="width:100%" data-action="release">Release issue</button>':'<button type="button" class="btn" style="width:100%" data-action="claim">Claim issue</button>'}
-  </aside>
-</div>`;
+function setView(view,{updateHistory=true,focusContent=true}={}){
+  currentView=view;
+  $$('.nav-item').forEach(button=>{const active=button.dataset.view===view||(view==='issue'&&button.dataset.view==='issues');button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false')});
+  issuesView.classList.toggle('hidden',view!=='issues');activityView.classList.toggle('hidden',view!=='activity');issueView.classList.toggle('hidden',view!=='issue');
+  pageTitle.textContent={issues:'Issues',activity:'Activity',issue:currentIssue?.identifier||'Issue'}[view];
+  newIssueBtn.classList.toggle('hidden',!canWrite()||view==='activity'||view==='issue');
+  if(updateHistory&&view!=='issue')history.pushState({view},'',location.pathname);
+  if(focusContent)mainContent.focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});
+}
+
+function setLayout(layout){
+  currentLayout=layout;
+  issueList.classList.toggle('hidden',layout!=='list');issueBoard.classList.toggle('hidden',layout!=='board');
+  $$('.layout-button').forEach(button=>{const active=button.dataset.layout===layout;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active))});
+}
+
+async function openDetail(ref,{updateHistory=true,focusContent=true}={}){
+  try{
+    currentIssue=await api('/api/issues/'+encodeURIComponent(ref));renderDetail();setView('issue',{updateHistory:false,focusContent});
+    if(updateHistory)history.pushState({view:'issue',issue:ref,fromApp:true},'',`#issue/${encodeURIComponent(ref)}`);
+  }catch(error){notify(error.message)}
+}
+
+async function restoreLocation(state=history.state){
+  const match=location.hash.match(/^#issue\/(.+)$/);
+  if(match)await openDetail(decodeURIComponent(match[1]),{updateHistory:false,focusContent:false});
+  else setView(state?.view==='activity'?'activity':'issues',{updateHistory:false,focusContent:false});
 }
 
 async function patchIssue(fields){
   try{
     currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}`,{method:'PATCH',body:JSON.stringify({expected_revision:currentIssue.revision,...fields})});
-    renderDetail();
-    await reloadBoard();
-  }catch(err){
-    notify(err.message);
-    await refreshDetail();
-    throw err;
+    data=await api('/api/dashboard');render();notify('Issue updated');
+  }catch(error){
+    if(error.code==='conflict')notify('This issue changed elsewhere. The latest version is now loaded.');else notify(error.message);
+    currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}`);data=await api('/api/dashboard');render();throw error;
   }
 }
-async function claimIssue(){
-  currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/claim`,{method:'POST',body:JSON.stringify({expected_revision:currentIssue.revision})});
-  notify('Issue claimed');renderDetail();await reloadBoard();
-}
-async function releaseIssue(){
-  currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/release`,{method:'POST',body:JSON.stringify({expected_revision:currentIssue.revision})});
-  notify('Issue released');renderDetail();await reloadBoard();
-}
-async function toggleLabel(labelId){
-  const active=new Set((currentIssue.labels||[]).map(l=>l.id));
-  active.has(labelId)?active.delete(labelId):active.add(labelId);
-  await patchIssue({labels:[...active]});
-}
-async function removeDependency(dependsOnId){
-  await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/dependencies`,{method:'DELETE',body:JSON.stringify({depends_on:dependsOnId})});
-  await refreshDetail();
-}
 
-detailBody.addEventListener('click',async e=>{
-  const btn=e.target.closest('[data-action]');
-  if(!btn)return;
-  const action=btn.dataset.action;
+async function mutateClaim(action,message){
   try{
-    if(action==='close-detail'){detailDialog.close();return}
-    if(action==='claim')return await claimIssue();
-    if(action==='release')return await releaseIssue();
-    if(action==='toggle-label')return await toggleLabel(+btn.dataset.label);
-    if(action==='open-issue')return await openDetail(btn.dataset.ref);
-    if(action==='remove-dependency')return await removeDependency(+btn.dataset.depends);
-  }catch(err){notify(err.message)}
-});
-
-detailBody.addEventListener('change',async e=>{
-  const el=e.target.closest('[data-field]');
-  if(!el)return;
-  const field=el.dataset.field;
-  let value=el.value;
-  if(field==='assignee_id'||field==='milestone_id')value=value?+value:null;
-  try{await patchIssue({[field]:value})}catch{}
-});
-
-detailBody.addEventListener('submit',async e=>{
-  const form=e.target.closest('[data-form]');
-  if(!form)return;
-  e.preventDefault();
-  const kind=form.dataset.form;
-  try{
-    if(kind==='comment'){
-      const body=form.body.value.trim();
-      if(!body)return;
-      await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/comments`,{method:'POST',body:JSON.stringify({body})});
-    }else if(kind==='dependency'){
-      const dependsOn=+form.depends_on.value;
-      if(!dependsOn)return;
-      await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/dependencies`,{method:'POST',body:JSON.stringify({depends_on:dependsOn})});
-    }else if(kind==='gitlink'){
-      const ref=form.ref.value.trim();
-      if(!ref)return;
-      await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/git-links`,{method:'POST',body:JSON.stringify({kind:form.kind.value,ref,url:form.url.value.trim()||null})});
+    currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/${action}`,{method:'POST',body:JSON.stringify({expected_revision:currentIssue.revision})});
+    data=await api('/api/dashboard');render();notify(message);
+  }catch(error){
+    if(error.code==='conflict'){
+      notify('This issue changed elsewhere. The latest version is now loaded.');
+      await refreshDetail();
+      return;
     }
-    form.reset();
-    await refreshDetail();
-  }catch(err){notify(err.message)}
-});
-
-function setView(view){
-  currentView=view;
-  $$('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===view));
-  ['board','activity'].forEach(v=>$('#'+v+'View').classList.toggle('hidden',v!==view));
-  pageTitle.textContent={board:'Board',activity:'Activity'}[view];
-  newIssueBtn.classList.toggle('hidden',view!=='board');
+    throw error;
+  }
 }
-$$('.nav').forEach(btn=>btn.addEventListener('click',()=>setView(btn.dataset.view)));
-$$('[data-close]').forEach(b=>b.addEventListener('click',()=>$('#'+b.dataset.close).close()));
+async function claimIssue(){return mutateClaim('claim','Issue claimed')}
+async function releaseIssue(){return mutateClaim('release','Issue released')}
+async function toggleLabel(labelId){
+  const active=new Set((currentIssue.labels||[]).map(label=>label.id));active.has(labelId)?active.delete(labelId):active.add(labelId);await patchIssue({labels:[...active]});
+}
+async function refreshDetail(){
+  currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}`);data=await api('/api/dashboard');render();
+}
 
-loginForm.addEventListener('submit',async e=>{
-  e.preventDefault();
-  token=tokenInput.value.trim();
-  loginError.textContent='';
-  try{await loadAll();try{localStorage.setItem('localBoardToken',token)}catch{}}
-  catch(err){loginError.textContent=err.message}
-});
-refreshBtn.addEventListener('click',()=>reloadBoard().catch(e=>notify(e.message)));
-searchInput.addEventListener('input',()=>{renderStats();renderBoard()});
-milestoneFilter.addEventListener('change',()=>{renderStats();renderBoard()});
-assigneeFilter.addEventListener('change',()=>{renderStats();renderBoard()});
-
-newIssueBtn.addEventListener('click',()=>{
-  issueForm.reset();
-  issueError.textContent='';
-  issueMilestone.innerHTML=milestoneOptions(null);
-  issueLabelPicker.innerHTML=(data.board?.labels||[]).map(l=>`<label style="display:inline-flex;align-items:center;gap:5px;margin:2px 10px 2px 0;font-size:12px;color:var(--muted)"><input type="checkbox" value="${l.id}">${esc(l.name)}</label>`).join('')||'<span class="muted">No labels configured</span>';
-  issueDialog.showModal();
-});
-issueForm.addEventListener('submit',async e=>{
-  e.preventDefault();
+async function handleIssueAction(event){
+  const actionTarget=event.target.closest('[data-action]');
+  if(!actionTarget)return;
   try{
-    const labels=[...issueLabelPicker.querySelectorAll('input:checked')].map(el=>+el.value);
-    const milestoneVal=issueMilestone.value;
-    await api('/api/issues',{method:'POST',body:JSON.stringify({title:issueTitle.value.trim(),description:issueDescription.value,priority:issuePriority.value,milestone_id:milestoneVal?+milestoneVal:null,labels})});
-    issueDialog.close();
-    notify('Issue created');
-    await reloadBoard();
-  }catch(err){issueError.textContent=err.message}
+    const action=actionTarget.dataset.action;
+    if(action==='back-to-issues'){
+      if(history.state?.fromApp)history.back();
+      else{history.replaceState({view:'issues'},'',location.pathname);setView('issues',{updateHistory:false})}
+      return;
+    }
+    if(actionTarget.dataset.action==='open-issue')return await openDetail(actionTarget.dataset.ref);
+    if(!canWrite())return;
+    if(actionTarget.dataset.action==='claim')return await claimIssue();
+    if(actionTarget.dataset.action==='release')return await releaseIssue();
+    if(actionTarget.dataset.action==='toggle-label')return await toggleLabel(+actionTarget.dataset.label);
+    if(actionTarget.dataset.action==='remove-dependency'){
+      await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/dependencies`,{method:'DELETE',body:JSON.stringify({depends_on:+actionTarget.dataset.depends})});await refreshDetail();notify('Dependency removed');
+    }
+  }catch(error){notify(error.message)}
+}
+
+async function handleDetailSubmit(event){
+  const form=event.target.closest('[data-form]');if(!form)return;event.preventDefault();
+  if(!canWrite())return;
+  try{
+    if(form.dataset.form==='comment'){
+      const body=form.body.value.trim();if(!body)return;await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/comments`,{method:'POST',body:JSON.stringify({body})});
+    }else if(form.dataset.form==='dependency'){
+      if(!form.depends_on.value)return;await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/dependencies`,{method:'POST',body:JSON.stringify({depends_on:+form.depends_on.value})});
+    }else if(form.dataset.form==='gitlink'){
+      const ref=form.ref.value.trim();if(!ref)return;await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/git-links`,{method:'POST',body:JSON.stringify({kind:form.kind.value,ref,url:form.url.value.trim()||null})});
+    }
+    form.reset();await refreshDetail();notify('Issue updated');
+  }catch(error){notify(error.message)}
+}
+
+async function handlePropertyChange(event){
+  const field=event.target.closest('[data-field]');if(!field)return;
+  if(!canWrite())return;
+  let value=field.value;if(field.dataset.field==='assignee_id'||field.dataset.field==='milestone_id')value=value?+value:null;
+  try{await patchIssue({[field.dataset.field]:value})}catch{}
+}
+
+function openNewIssue(status=''){
+  if(!canWrite())return;
+  issueForm.reset();issueError.textContent='';issueMilestone.innerHTML=milestoneOptions(null);issueAssignee.innerHTML=actorOptions(null);
+  issueLabelPicker.innerHTML=(data.board?.labels||[]).map(label=>`<label class="label-choice"><input type="checkbox" value="${label.id}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</label>`).join('')||'<span class="muted">No labels configured</span>';
+  issueDialog.dataset.status=status;newIssueHeading.textContent=status?`Create issue in ${status}`:'Create issue';issueDialog.showModal();requestAnimationFrame(()=>issueTitle.focus());
+}
+
+$$('.nav-item').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.view)));
+$$('.layout-button').forEach(button=>button.addEventListener('click',()=>setLayout(button.dataset.layout)));
+$$('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
+issueList.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
+issueBoard.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref)});
+issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('change',handlePropertyChange);
+window.addEventListener('popstate',event=>restoreLocation(event.state));
+
+loginForm.addEventListener('submit',async event=>{
+  event.preventDefault();token=tokenInput.value.trim();loginError.textContent='';
+  try{await loadAll();try{localStorage.setItem('localBoardToken',token)}catch{}}
+  catch(error){loginError.textContent=error.message}
+});
+refreshBtn.addEventListener('click',async()=>{try{await reloadBoard();if(currentView==='issue')await refreshDetail();notify('Board refreshed')}catch(error){notify(error.message)}});
+newIssueBtn.addEventListener('click',()=>openNewIssue());
+[searchInput,milestoneFilter,assigneeFilter].forEach(control=>control.addEventListener(control===searchInput?'input':'change',renderIssues));
+
+issueForm.addEventListener('submit',async event=>{
+  event.preventDefault();issueError.textContent='';
+  try{
+    const labels=[...issueLabelPicker.querySelectorAll('input:checked')].map(input=>+input.value),milestone=issueMilestone.value,assignee=issueAssignee.value;
+    const created=await api('/api/issues',{method:'POST',body:JSON.stringify({title:issueTitle.value.trim(),description:issueDescription.value,priority:issuePriority.value,status:issueDialog.dataset.status||undefined,milestone_id:milestone?+milestone:null,assignee_id:assignee?+assignee:null,labels})});
+    issueDialog.close();await reloadBoard();notify(`${created.identifier} created`);await openDetail(created.identifier);
+  }catch(error){issueError.textContent=error.message}
 });
 
-if(token){
-  loadAll().catch(()=>{try{localStorage.removeItem('localBoardToken')}catch{}login.classList.remove('hidden')});
+issueDialog.addEventListener('click',event=>{if(event.target===issueDialog)issueDialog.close()});
+setLayout('list');
+if(!history.state?.view){
+  const directIssue=location.hash.match(/^#issue\/(.+)$/);
+  if(directIssue)history.replaceState({view:'issue',issue:decodeURIComponent(directIssue[1]),fromApp:false},'',location.href);
+  else history.replaceState({view:'issues'},'',location.href);
 }
+if(token){loadAll().catch(()=>{try{localStorage.removeItem('localBoardToken')}catch{}login.classList.remove('hidden')})}
 </script>
-</body></html>
+</body>
+</html>
