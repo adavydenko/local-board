@@ -145,6 +145,40 @@
     .activity-ref{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted)}
     .activity-time{color:var(--muted);font-size:10.5px;white-space:nowrap}
 
+    .settings-page{max-width:1080px;padding:24px 28px 72px}
+    .settings-intro{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,360px);gap:28px;align-items:start;margin-bottom:30px}
+    .settings-heading{margin:0 0 6px;font-size:20px;line-height:1.2;letter-spacing:-.025em;font-weight:650}
+    .settings-description{max-width:580px;margin:0;color:var(--muted);font-size:12px;line-height:1.6}
+    .managed-note{display:flex;gap:10px;padding:12px 13px;border:1px solid #dfe1f2;border-radius:7px;background:#f8f8fe;color:var(--text-soft)}
+    .managed-note svg{width:16px;height:16px;flex:0 0 auto;margin-top:1px;color:var(--accent)}
+    .managed-note strong{display:block;margin-bottom:2px;font-size:11.5px;font-weight:650}
+    .managed-note p{margin:0;color:var(--muted);font-size:10.5px;line-height:1.5}
+    .managed-note code{font:10.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-soft)}
+    .settings-grid{display:grid;grid-template-columns:minmax(260px,.72fr) minmax(360px,1.28fr);gap:28px;align-items:start}
+    .settings-section{min-width:0;margin-bottom:28px}
+    .settings-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 9px}
+    .settings-section-heading h2{margin:0;font-size:11px;font-weight:650;color:var(--text-soft)}
+    .settings-section-heading span{color:var(--muted);font-size:10px}
+    .settings-list{border-top:1px solid var(--line)}
+    .settings-row{display:grid;grid-template-columns:94px minmax(0,1fr);gap:14px;align-items:start;min-height:42px;padding:11px 3px;border-bottom:1px solid var(--line);font-size:11.5px}
+    .settings-row>span{color:var(--muted)}
+    .settings-row strong{font-weight:550;color:var(--text);overflow-wrap:anywhere}
+    .catalog-list{border:1px solid var(--line);border-radius:7px;overflow:hidden;background:var(--surface)}
+    .catalog-row{display:grid;grid-template-columns:28px minmax(0,1fr) auto;gap:10px;align-items:center;min-height:58px;padding:9px 11px;border-bottom:1px solid var(--line)}
+    .catalog-row:last-child{border-bottom:0}
+    .catalog-icon{width:28px;height:28px;display:grid;place-items:center;border-radius:6px;background:var(--surface-raised);color:var(--muted)}
+    .catalog-icon svg{width:14px;height:14px}
+    .catalog-copy{min-width:0}
+    .catalog-copy strong,.catalog-copy small{display:block}
+    .catalog-copy strong{font-size:11.5px;font-weight:600}
+    .catalog-copy small{margin-top:2px;color:var(--muted);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .managed-badge{padding:2px 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface-raised);color:var(--muted);font-size:9.5px;white-space:nowrap}
+    .config-shell{overflow:hidden;border:1px solid #2f3035;border-radius:8px;background:#25262a;box-shadow:0 8px 24px rgba(25,25,28,.08)}
+    .config-toolbar{height:36px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #38393f;color:#c3c4ca;font:10.5px ui-monospace,SFMono-Regular,Menlo,monospace}
+    .config-dot{width:7px;height:7px;border-radius:50%;background:#5e6ad2}
+    .config-path{margin-left:auto;color:#888b94}
+    .config-preview{max-height:560px;overflow:auto;margin:0;padding:15px 16px 18px;color:#d9dae0;background:#25262a;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere}
+
     .issue-page{min-height:calc(100vh - 52px)}
     .issue-toolbar{height:42px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11.5px}
     .back-button{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 7px;border:0;border-radius:5px;background:transparent;color:var(--text-soft)}
@@ -232,10 +266,11 @@
       :root{--sidebar-width:186px}
       .issue-grid{grid-template-columns:minmax(0,1fr) 230px;gap:30px;padding-left:28px;padding-right:28px}
       .issue-row{grid-template-columns:18px 62px minmax(160px,1fr) minmax(0,auto) 28px}.assignee-cell{display:none}
+      .settings-intro,.settings-grid{grid-template-columns:1fr}.settings-intro{gap:17px}
     }
     @media(max-width:720px){
       .app{display:block;padding-bottom:52px}.sidebar{position:fixed;z-index:30;top:auto;bottom:0;left:0;right:0;width:auto;height:52px;display:block;padding:4px 8px;border:0;border-top:1px solid var(--line);background:rgba(247,247,248,.96);backdrop-filter:blur(14px)}
-      .brand,.board-switcher,.nav-label,.identity{display:none}.primary-nav{display:grid;grid-template-columns:1fr 1fr;gap:6px;height:100%;max-width:360px;margin:auto}.nav-item{height:44px;justify-content:center;flex-direction:column;gap:1px;padding:0;font-size:9px}.nav-icon{width:15px;height:15px}.nav-count{display:none}
+      .brand,.board-switcher,.nav-label,.identity{display:none}.primary-nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;height:100%;max-width:420px;margin:auto}.nav-item{height:44px;justify-content:center;flex-direction:column;gap:1px;padding:0;font-size:9px}.nav-icon{width:15px;height:15px}.nav-count{display:none}
       .workspace-header{height:48px;padding:0 12px}.content{min-height:calc(100vh - 100px)}.workspace-title .eyebrow,.refresh-label{display:none}
       .issues-header{padding:17px 14px 10px}.issues-heading{margin-bottom:13px}.issues-heading h1{font-size:19px}.issues-heading p{display:none}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:7px}.search-wrap{min-width:0;max-width:none;grid-column:1/3}.toolbar select{width:100%;max-width:none}.layout-toggle{margin-left:0;grid-column:3;grid-row:1}.filter-summary{padding:0 14px 8px}#milestoneFilter{grid-column:1}#assigneeFilter{grid-column:2}
       .status-heading{top:48px;padding:0 12px}.issue-row{min-height:48px;grid-template-columns:18px 55px minmax(0,1fr) 22px;gap:6px;padding:6px 12px}.row-labels,.assignee-cell{display:none}.issue-title{font-size:12.5px}.row-empty{padding-left:44px}
@@ -243,6 +278,7 @@
       .activity-page{padding:18px 15px 50px}.activity-row{grid-template-columns:26px minmax(0,1fr)}.activity-time{grid-column:2}
       .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-properties{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .property{grid-template-columns:78px minmax(0,1fr)}
       .composer{align-items:flex-end}.composer input{height:36px}.add-row{display:grid;grid-template-columns:1fr auto}.add-row .control{min-width:0}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}.dialog-form{max-height:calc(100vh - 20px)}.field-row{grid-template-columns:1fr}.toast{bottom:66px}
+      .settings-page{padding:18px 15px 50px}.settings-grid{gap:8px}.managed-note{padding:11px}.config-preview{max-height:420px}
     }
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
   </style>
@@ -278,6 +314,10 @@
       <button class="nav-item" type="button" data-view="activity">
         <svg class="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M8 2.25A5.75 5.75 0 1 1 2.25 8M8 4.5V8l2.25 1.5" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <span>Activity</span>
+      </button>
+      <button class="nav-item" type="button" data-view="settings">
+        <svg class="nav-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="2.25" stroke="currentColor"/><path d="M8 2.25v1.1M8 12.65v1.1M13.75 8h-1.1M3.35 8h-1.1M12.07 3.93l-.78.78M4.71 11.29l-.78.78M12.07 12.07l-.78-.78M4.71 4.71l-.78-.78" stroke="currentColor" stroke-linecap="round"/></svg>
+        <span>Settings</span>
       </button>
     </nav>
     <div class="identity">
@@ -330,6 +370,38 @@
       <section class="activity-page hidden" id="activityView">
         <div class="page-heading"><h1>Activity</h1><p>A chronological record of changes across the board.</p></div>
         <div class="activity-feed" id="activityFeed"></div>
+      </section>
+
+      <section class="settings-page hidden" id="settingsView" aria-labelledby="settingsHeading">
+        <div class="settings-intro">
+          <div>
+            <h1 class="settings-heading" id="settingsHeading">Project settings</h1>
+            <p class="settings-description">The repository configuration that shapes identifiers, issue states, milestones, and labels across this board.</p>
+          </div>
+          <aside class="managed-note" aria-label="Configuration ownership">
+            <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 2.5h4l2.5 2.5v8.5h-7v-11Z" stroke="currentColor" stroke-linejoin="round"/><path d="M9 2.5V5h2.5M6.5 8h3M6.5 10.5h3" stroke="currentColor" stroke-linecap="round"/></svg>
+            <div><strong>Managed by <code>.local-board/project.toml</code></strong><p>This view is read-only. Update the tracked file and apply the configuration to make changes.</p></div>
+          </aside>
+        </div>
+        <div class="settings-grid">
+          <div>
+            <section class="settings-section" aria-labelledby="projectOverviewHeading">
+              <div class="settings-section-heading"><h2 id="projectOverviewHeading">Project overview</h2><span>Repository identity</span></div>
+              <div class="settings-list" id="settingsProject"></div>
+            </section>
+            <section class="settings-section" aria-labelledby="catalogHeading">
+              <div class="settings-section-heading"><h2 id="catalogHeading">Configuration catalogs</h2><span>Future management screens</span></div>
+              <div class="catalog-list" id="settingsCatalog"></div>
+            </section>
+          </div>
+          <section class="settings-section" aria-labelledby="configurationHeading">
+            <div class="settings-section-heading"><h2 id="configurationHeading">Configuration preview</h2><span>Current board values</span></div>
+            <div class="config-shell">
+              <div class="config-toolbar"><span class="config-dot" aria-hidden="true"></span><span>project.toml</span><span class="config-path">.local-board/</span></div>
+              <pre class="config-preview" id="configPreview" aria-label="project.toml configuration preview"></pre>
+            </div>
+          </section>
+        </div>
       </section>
 
       <section class="issue-page hidden" id="issueView" aria-labelledby="issueTitleHeading">
@@ -391,6 +463,7 @@ function relativeTime(value){
   return date.toLocaleDateString(undefined,{month:'short',day:'numeric',year:date.getFullYear()===new Date().getFullYear()?undefined:'numeric'});
 }
 function humanize(value){return String(value||'updated').replaceAll('_',' ').replace(/^./,char=>char.toUpperCase())}
+function tomlString(value){return `"${String(value??'').replace(/\\/g,'\\\\').replace(/"/g,'\\"').replace(/\n/g,'\\n')}"`}
 
 async function api(path,options={}){
   const response=await fetch(path,{...options,headers:{Authorization:'Bearer '+token,'Content-Type':'application/json',...(options.headers||{})}});
@@ -440,7 +513,7 @@ function milestoneName(id){return (data.board?.milestones||[]).find(item=>item.i
 function labelCatalog(name){return (data.board?.labels||[]).find(label=>label.name===name||label.key===name)}
 
 function render(){
-  renderShell();renderFilters();renderIssues();renderActivity();
+  renderShell();renderFilters();renderIssues();renderActivity();renderSettings();
   if(currentIssue)renderDetail();
 }
 
@@ -500,6 +573,45 @@ function renderActivity(){
     const ref=item.identifier||`${item.entity_type} #${item.entity_id}`;
     return `<div class="activity-row"><span class="mini-avatar">${esc(initials(item.actor||'system'))}</span><div class="activity-copy"><strong>${esc(item.actor||'System')}</strong> ${esc(humanize(item.action).toLowerCase())} <span class="activity-ref">${esc(ref)}</span></div><time class="activity-time" datetime="${esc(item.created_at)}" title="${esc(new Date(item.created_at).toLocaleString())}">${esc(relativeTime(item.created_at))}</time></div>`;
   }).join('')||'<div class="zero-state"><div><strong>No activity yet</strong>Changes to issues will appear here.</div></div>';
+}
+
+function projectToml(){
+  const board=data.board||{},defaults=board.defaults||{},policy=board.agent_policy||{};
+  const lines=['schema_version = 2','','[project]',`prefix = ${tomlString(board.prefix||'')}`,`name = ${tomlString(board.name||'')}`,`description = ${tomlString(board.description||'')}`,'','[defaults]',`priority = ${tomlString(defaults.priority||'medium')}`,'','[agent_policy]',`require_assignee_before_start = ${policy.require_assignee_before_start!==false}`];
+  statusesSorted().forEach(status=>lines.push('','[[statuses]]',`name = ${tomlString(status.name)}`,`category = ${tomlString(status.category)}`));
+  (board.milestones||[]).forEach(milestone=>{
+    lines.push('','[[milestones]]');
+    if(milestone.key)lines.push(`key = ${tomlString(milestone.key)}`);
+    lines.push(`name = ${tomlString(milestone.name)}`,`description = ${tomlString(milestone.description||'')}`);
+    if(milestone.due_at)lines.push(`due_at = ${tomlString(milestone.due_at)}`);
+  });
+  (board.labels||[]).forEach(label=>{
+    lines.push('','[[labels]]');
+    if(label.key)lines.push(`key = ${tomlString(label.key)}`);
+    lines.push(`name = ${tomlString(label.name)}`,`color = ${tomlString(label.color||'#64748b')}`);
+  });
+  return lines.join('\n');
+}
+
+function catalogSummary(items){
+  if(!items.length)return 'None configured';
+  const names=items.slice(0,3).map(item=>item.name).join(', ');
+  return names+(items.length>3?` +${items.length-3} more`:'');
+}
+
+function renderSettings(){
+  const board=data.board||{},statuses=statusesSorted(),milestones=board.milestones||[],labels=board.labels||[];
+  settingsProject.innerHTML=`
+    <div class="settings-row"><span>Prefix</span><strong>${esc(board.prefix||'Not configured')}</strong></div>
+    <div class="settings-row"><span>Name</span><strong>${esc(board.name||'Repository')}</strong></div>
+    <div class="settings-row"><span>Description</span><strong>${esc(board.description||'No description')}</strong></div>
+    <div class="settings-row"><span>Default priority</span><strong>${esc(humanize(board.defaults?.priority||'medium'))}</strong></div>
+    <div class="settings-row"><span>Start policy</span><strong>${board.agent_policy?.require_assignee_before_start!==false?'Assignee required':'Unassigned starts allowed'}</strong></div>`;
+  settingsCatalog.innerHTML=`
+    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5" stroke="currentColor"/><path d="M5.5 8h5" stroke="currentColor" stroke-linecap="round"/></svg></span><span class="catalog-copy"><strong>Statuses · ${statuses.length}</strong><small>${esc(catalogSummary(statuses))}</small></span><span class="managed-badge">TOML</span></div>
+    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3.5h10v9H3zM5.5 2v3M10.5 2v3M3 6.5h10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="catalog-copy"><strong>Milestones · ${milestones.length}</strong><small>${esc(catalogSummary(milestones))}</small></span><span class="managed-badge">TOML</span></div>
+    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m8.2 2.5 5.3 5.3-5.7 5.7-5.3-5.3V2.5h5.7Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="5.3" cy="5.3" r=".8" fill="currentColor"/></svg></span><span class="catalog-copy"><strong>Labels · ${labels.length}</strong><small>${esc(catalogSummary(labels))}</small></span><span class="managed-badge">TOML</span></div>`;
+  configPreview.textContent=projectToml();
 }
 
 function statusOptions(selected){return statusesSorted().map(status=>`<option value="${esc(status.name)}" ${status.name===selected?'selected':''}>${esc(status.name)}</option>`).join('')}
@@ -565,9 +677,9 @@ function renderDetail(){
 function setView(view,{updateHistory=true,focusContent=true}={}){
   currentView=view;
   $$('.nav-item').forEach(button=>{const active=button.dataset.view===view||(view==='issue'&&button.dataset.view==='issues');button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false')});
-  issuesView.classList.toggle('hidden',view!=='issues');activityView.classList.toggle('hidden',view!=='activity');issueView.classList.toggle('hidden',view!=='issue');
-  pageTitle.textContent={issues:'Issues',activity:'Activity',issue:currentIssue?.identifier||'Issue'}[view];
-  newIssueBtn.classList.toggle('hidden',!canWrite()||view==='activity'||view==='issue');
+  issuesView.classList.toggle('hidden',view!=='issues');activityView.classList.toggle('hidden',view!=='activity');settingsView.classList.toggle('hidden',view!=='settings');issueView.classList.toggle('hidden',view!=='issue');
+  pageTitle.textContent={issues:'Issues',activity:'Activity',settings:'Settings',issue:currentIssue?.identifier||'Issue'}[view];
+  newIssueBtn.classList.toggle('hidden',!canWrite()||view!=='issues');
   if(updateHistory&&view!=='issue')history.pushState({view},'',location.pathname);
   if(focusContent)mainContent.focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});
 }
@@ -588,7 +700,7 @@ async function openDetail(ref,{updateHistory=true,focusContent=true}={}){
 async function restoreLocation(state=history.state){
   const match=location.hash.match(/^#issue\/(.+)$/);
   if(match)await openDetail(decodeURIComponent(match[1]),{updateHistory:false,focusContent:false});
-  else setView(state?.view==='activity'?'activity':'issues',{updateHistory:false,focusContent:false});
+  else setView(state?.view==='settings'?'settings':state?.view==='activity'?'activity':'issues',{updateHistory:false,focusContent:false});
 }
 
 async function patchIssue(fields){

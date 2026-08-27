@@ -78,6 +78,17 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn("function canWrite(){return identity?.role!=='viewer'}", self.html)
         self.assertIn("if(!canWrite())return readOnlyProperties(issue)", self.html)
 
+    def test_settings_overview_exposes_repository_managed_configuration(self):
+        self.assertIn('id="settingsView"', self.html)
+        self.assertIn('Managed by <code>.local-board/project.toml</code>', self.html)
+        self.assertIn('id="configPreview"', self.html)
+        self.assertIn('function projectToml()', self.html)
+
+    def test_settings_is_a_first_class_navigation_and_history_view(self):
+        self.assertIn('data-view="settings"', self.html)
+        self.assertIn("settingsView.classList.toggle('hidden',view!=='settings')", self.html)
+        self.assertIn("state?.view==='settings'?'settings'", self.html)
+
 
 class WebUiTest(unittest.TestCase):
     def setUp(self):
