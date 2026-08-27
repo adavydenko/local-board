@@ -1,4 +1,5 @@
 import multiprocessing
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -42,6 +43,25 @@ class MigrationTest(unittest.TestCase):
             db.execute("PRAGMA user_version=2")
         with self.assertRaisesRegex(RuntimeError, "back it up"):
             Board(self.path).init()
+
+    def test_pre_0_1_rejection_names_the_directory_to_move_aside(self):
+        with sqlite3.connect(self.path) as db:
+            db.execute("PRAGMA user_version=2")
+        with self.assertRaises(RuntimeError) as caught:
+            Board(self.path).init()
+        self.assertIn(str(self.path.parent), str(caught.exception))
+
+    def test_doctor_reports_a_pre_0_1_database_instead_of_a_raw_sqlite_error(self):
+        from local_board.doctor import run_doctor
+
+        with sqlite3.connect(self.path) as db:
+            db.execute("PRAGMA user_version=2")
+        result = run_doctor(Board(self.path), self.path.parent / "project.toml", online=False)
+        self.assertFalse(result["ok"])
+        schema = [c for c in result["checks"] if c["name"] == "database_schema"]
+        self.assertEqual(len(schema), 1)
+        self.assertIn("predates the 0.1.0 board format", schema[0]["message"])
+        self.assertNotIn("no such table", json.dumps(result))
 
     def test_init_rejects_a_newer_database(self):
         with sqlite3.connect(self.path) as db:
