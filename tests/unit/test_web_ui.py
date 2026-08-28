@@ -172,6 +172,13 @@ class WebUiTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"<html", body.lower())
 
+    def test_root_serves_a_multiline_comment_composer(self):
+        status, body = self.request("GET", "/", token=False, parse_json=False)
+        self.assertEqual(status, 200)
+        self.assertIn(b'<textarea class="control comment-input"', body)
+        self.assertIn(b'data-action="cancel-comment"', body)
+        self.assertIn(b"Markdown supported", body)
+
     def test_dashboard_shape(self):
         status, dashboard = self.request("GET", "/api/dashboard")
         self.assertEqual(status, 200)

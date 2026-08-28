@@ -229,8 +229,14 @@
     .comment-head strong{font-size:11.5px;font-weight:650}
     .comment-head time{color:var(--muted);font-size:10px}
     .comment-body{font-size:12.5px;line-height:1.6;color:var(--text-soft)}
-    .composer{display:flex;gap:8px;margin-top:16px}
-    .composer input{flex:1;min-width:0}
+    .comment-composer{margin-top:18px;border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.025)}
+    .composer-header{display:flex;align-items:center;gap:8px;padding:10px 11px 0;color:var(--text-soft);font-size:11px;font-weight:600}
+    .composer-header .mini-avatar{width:22px;height:22px}
+    .comment-input{display:block;width:100%;min-height:96px;height:96px;margin-top:7px;border:0;border-radius:0;background:transparent;padding:8px 13px;resize:vertical;line-height:1.6;box-shadow:none!important}
+    .comment-input:focus{background:var(--surface-raised)}
+    .composer-footer{display:flex;align-items:center;gap:8px;min-height:42px;padding:6px 8px 6px 13px;border-top:1px solid var(--line);background:var(--surface-raised)}
+    .composer-hint{color:var(--muted);font-size:10px}
+    .composer-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
     .empty-inline{padding:7px 0;color:var(--muted);font-size:11.5px}
     .issue-sidebar{align-self:start;position:sticky;top:84px;border-left:1px solid var(--line);padding-left:24px}
     .properties-heading{margin:0 0 14px;color:var(--muted);font-size:10px;font-weight:650;text-transform:uppercase;letter-spacing:.08em}
@@ -325,7 +331,7 @@
       .board-layout{grid-auto-flow:row;grid-auto-columns:auto;padding:0 10px 20px;min-height:0}.board-column{width:100%}.column-heading{position:sticky;top:48px;z-index:3;background:var(--canvas)}
       .activity-page{padding:18px 15px 50px}.activity-row{grid-template-columns:26px minmax(0,1fr)}.activity-time{grid-column:2}
       .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-sidebar{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .issue-sidebar{display:block;position:static;border:0;padding:10px 0 0}.mobile-properties .property{grid-template-columns:78px minmax(0,1fr)}
-      .composer{align-items:flex-end}.composer input{height:36px}.side-form.git-form{grid-template-columns:1fr auto}.side-form.git-form .control:last-of-type{grid-column:1}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}.dialog-form{max-height:calc(100vh - 20px)}.field-row{grid-template-columns:1fr}.toast{bottom:66px}
+      .comment-input{min-height:104px;height:104px}.side-form.git-form{grid-template-columns:1fr auto}.side-form.git-form .control:last-of-type{grid-column:1}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}.dialog-form{max-height:calc(100vh - 20px)}.field-row{grid-template-columns:1fr}.toast{bottom:66px}
       .settings-page{padding:18px 15px 50px}.settings-grid{gap:8px}.managed-note{padding:11px}.config-preview{max-height:420px}
     }
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
@@ -749,7 +755,7 @@ function renderDetail(){
   const comments=(issue.comments||[]).map(comment=>`<article class="comment"><span class="mini-avatar">${esc(initials(comment.author))}</span><div><div class="comment-head"><strong>${esc(comment.author)}</strong><time datetime="${esc(comment.created_at)}">${esc(relativeTime(comment.created_at))}</time></div><div class="comment-body">${markdown(comment.body)}</div></div></article>`).join('');
   const propertyContent=propertyMarkup(issue);
   const sidebarContent=`${propertyContent}${structureMarkup(issue,parent)}${blockingMarkup(issue)}${gitLinksMarkup(issue)}`;
-  const commentForm=canWrite()?`<form class="composer" data-form="comment"><input class="control" name="body" placeholder="Leave a comment…" aria-label="Comment" required><button class="button primary" type="submit">Send</button></form>`:'';
+  const commentForm=canWrite()?`<form class="comment-composer" data-form="comment"><div class="composer-header"><span class="mini-avatar">${esc(initials(identity?.name))}</span><span>Leave a comment</span></div><textarea class="control comment-input" name="body" rows="4" placeholder="Write a comment…" aria-label="Comment" required></textarea><div class="composer-footer"><span class="composer-hint">Markdown supported · ⌘↵ to send</span><span class="composer-actions"><button class="button quiet small" type="button" data-action="cancel-comment">Cancel</button><button class="button primary small" type="submit">Send</button></span></div></form>`:'';
   issueToolbarId.textContent=issue.identifier;
   issueDocument.innerHTML=`<div class="issue-kicker">${statusIndicator({category:issue.category})}<span>${esc(issue.status)}</span>${issue.blocked?'<span class="label-chip" style="color:var(--danger)">Blocked</span>':''}</div>
     <h1 class="issue-title-heading" id="issueTitleHeading">${esc(issue.title)}</h1>
@@ -830,6 +836,9 @@ async function handleIssueAction(event){
       return;
     }
     if(actionTarget.dataset.action==='open-issue')return await openDetail(actionTarget.dataset.ref);
+    if(action==='cancel-comment'){
+      const form=actionTarget.closest('[data-form="comment"]');form?.reset();return;
+    }
     if(!canWrite())return;
     if(actionTarget.dataset.action==='claim')return await claimIssue();
     if(actionTarget.dataset.action==='release')return await releaseIssue();
@@ -862,6 +871,12 @@ async function handlePropertyChange(event){
   try{await patchIssue({[field.dataset.field]:value})}catch{}
 }
 
+function handleCommentShortcut(event){
+  if(!(event.metaKey||event.ctrlKey)||event.key!=='Enter'||event.target?.name!=='body'||event.target?.tagName!=='TEXTAREA')return;
+  const form=event.target.closest('[data-form="comment"]');if(!form)return;
+  event.preventDefault();form.requestSubmit();
+}
+
 function openNewIssue(status=''){
   if(!canWrite())return;
   issueForm.reset();issueError.textContent='';issueMilestone.innerHTML=milestoneOptions(null);issueAssignee.innerHTML=actorOptions(defaultNewIssueAssignee(status));
@@ -874,7 +889,7 @@ $$('.layout-button').forEach(button=>button.addEventListener('click',()=>setLayo
 $$('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
 issueList.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
 issueBoard.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref)});
-issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('change',handlePropertyChange);
+issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('change',handlePropertyChange);issueView.addEventListener('keydown',handleCommentShortcut);
 window.addEventListener('popstate',event=>restoreLocation(event.state));
 
 loginForm.addEventListener('submit',async event=>{
