@@ -319,7 +319,8 @@
     .property-picker summary:hover .property-value,.property-picker[open] .property-value{background:var(--hover);color:var(--text)}
     .property-value .mini-avatar{width:18px;height:18px;font-size:7px}
     .milestone-marker{color:#81838a;font-size:15px;line-height:1}
-    .property-menu{position:absolute;z-index:15;top:calc(100% + 4px);left:0;width:max(260px,100%);padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 12px 28px rgba(0,0,0,.12)}
+    .property-menu{position:absolute;z-index:15;top:calc(100% + 4px);left:0;width:max(260px,100%);max-width:calc(100vw - 16px);padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 12px 28px rgba(0,0,0,.12)}
+    .property-menu.align-end,.label-options.align-end{left:auto;right:0}
     .property-menu-heading{padding:5px 7px 7px;color:var(--muted);font-size:10px;font-weight:600}
     .property-option{display:flex;align-items:center;gap:7px;width:100%;min-height:28px;padding:5px 7px;border:0;border-radius:5px;background:transparent;color:var(--text-soft);font-size:11.5px;text-align:left}
     .property-option:hover,.property-option.selected{background:var(--hover);color:var(--text)}
@@ -338,7 +339,7 @@
     .label-editor summary{display:inline-flex;align-items:center;min-height:24px;padding:0 8px;border:1px dashed var(--line-strong);border-radius:5px;color:var(--muted);font-size:10px;cursor:pointer;list-style:none}
     .label-editor summary::-webkit-details-marker{display:none}
     .label-editor summary:hover{border-color:#bfc4ec;background:var(--accent-soft);color:var(--text-soft)}
-    .label-options{position:absolute;z-index:15;top:calc(100% + 6px);left:0;display:grid;gap:2px;width:230px;max-height:260px;overflow:auto;padding:5px;border:1px solid var(--line);border-radius:6px;background:var(--surface);box-shadow:0 8px 22px rgba(0,0,0,.1)}
+    .label-options{position:absolute;z-index:15;top:calc(100% + 6px);left:0;display:grid;gap:2px;width:230px;max-width:calc(100vw - 16px);max-height:260px;overflow:auto;padding:5px;border:1px solid var(--line);border-radius:6px;background:var(--surface);box-shadow:0 8px 22px rgba(0,0,0,.1)}
     .label-button{width:100%;justify-content:flex-start;border-color:transparent;background:transparent}
     .label-button:hover{background:var(--hover)}
     .label-create-action{color:var(--accent);font-weight:600}
@@ -1245,7 +1246,7 @@ function handlePropertyPickerDismissal(event){
   if(event.key!=='Escape')return;
   const picker=$$('details.property-picker[open],details.label-editor[open]').find(item=>item.getClientRects().length);
   if(!picker)return;
-  event.preventDefault();const wasCreating=creatingIssueLabel;dismissPropertyPickers();if(wasCreating)renderDetail();requestAnimationFrame(()=>focusPropertyPicker('labels'));
+  event.preventDefault();const field=picker.dataset.propertyPicker;const wasCreating=creatingIssueLabel;dismissPropertyPickers();if(wasCreating)renderDetail();requestAnimationFrame(()=>focusPropertyPicker(field));
 }
 
 function openNewIssue(status=''){
@@ -1263,6 +1264,13 @@ issueBoard.addEventListener('click',event=>{const issue=event.target.closest('[d
 issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('keydown',handleCommentShortcut);issueView.addEventListener('keydown',handleInlineEditShortcut);issueView.addEventListener('keydown',handlePropertyPickerDismissal);
 settingsView.addEventListener('click',event=>{if(!handleSettingsTabs(event))handleSettingsAction(event)});settingsView.addEventListener('submit',handleSettingsSubmit);settingsView.addEventListener('keydown',handleSettingsTabKeydown);settingsView.addEventListener('keydown',handleMilestoneEditorDismissal);
 window.addEventListener('popstate',event=>restoreLocation(event.state));
+// 'toggle' does not bubble, so capture at the document level; this survives innerHTML re-renders.
+document.addEventListener('toggle',event=>{
+  const menu=event.target.querySelector?.(':scope > .property-menu, :scope > .label-options');
+  if(!event.target.open||!menu)return;
+  menu.classList.remove('align-end');
+  if(menu.getBoundingClientRect().right>document.documentElement.clientWidth-8)menu.classList.add('align-end');
+},true);
 
 loginForm.addEventListener('submit',async event=>{
   event.preventDefault();token=tokenInput.value.trim();loginError.textContent='';
