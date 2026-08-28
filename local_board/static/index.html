@@ -153,6 +153,7 @@
 
     .settings-page{max-width:1080px;padding:24px 28px 72px}
     .settings-intro{display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,360px);gap:28px;align-items:start;margin-bottom:30px}
+    .settings-intro.milestones-active{display:block;margin-bottom:18px}
     .settings-heading{margin:0 0 6px;font-size:20px;line-height:1.2;letter-spacing:-.025em;font-weight:650}
     .settings-description{max-width:580px;margin:0;color:var(--muted);font-size:12px;line-height:1.6}
     .managed-note{display:flex;gap:10px;padding:12px 13px;border:1px solid #dfe1f2;border-radius:7px;background:#f8f8fe;color:var(--text-soft)}
@@ -160,6 +161,10 @@
     .managed-note strong{display:block;margin-bottom:2px;font-size:11.5px;font-weight:650}
     .managed-note p{margin:0;color:var(--muted);font-size:10.5px;line-height:1.5}
     .managed-note code{font:10.5px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-soft)}
+    .settings-tabs{display:flex;align-items:flex-end;gap:3px;margin:0 0 24px;border-bottom:1px solid var(--line)}
+    .settings-tab{height:32px;padding:0 10px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font-size:11.5px;font-weight:550}
+    .settings-tab:hover{color:var(--text-soft);background:var(--hover)}
+    .settings-tab[aria-selected="true"]{border-bottom-color:var(--accent);color:var(--text);font-weight:650}
     .settings-grid{display:grid;grid-template-columns:minmax(260px,.72fr) minmax(360px,1.28fr);gap:28px;align-items:start}
     .settings-section{min-width:0;margin-bottom:28px}
     .settings-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:0 0 9px}
@@ -198,6 +203,31 @@
     .config-dot{width:7px;height:7px;border-radius:50%;background:#5e6ad2}
     .config-path{margin-left:auto;color:#888b94}
     .config-preview{max-height:560px;overflow:auto;margin:0;padding:15px 16px 18px;color:#d9dae0;background:#25262a;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:2;white-space:pre-wrap;overflow-wrap:anywhere}
+    .milestone-manager{max-width:720px}
+    .milestone-manager-copy{margin:0 0 10px;color:var(--muted);font-size:10.5px;line-height:1.5}
+    .milestone-list{border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+    .milestone-editor,.milestone-static,.milestone-unassigned{border-bottom:1px solid var(--line)}
+    .milestone-editor:last-child,.milestone-static:last-child,.milestone-unassigned:last-child{border-bottom:0}
+    .milestone-editor summary,.milestone-static,.milestone-unassigned{display:grid;grid-template-columns:20px minmax(0,1fr) auto 18px;align-items:center;gap:10px;min-height:48px;padding:8px 11px;list-style:none}
+    .milestone-editor summary{cursor:pointer}
+    .milestone-editor summary::-webkit-details-marker{display:none}
+    .milestone-editor summary:hover{background:var(--hover)}
+    .milestone-editor[open] summary{background:var(--hover)}
+    .milestone-glyph{width:14px;height:14px;border:2px solid #c4c5c9;border-radius:2px;transform:rotate(45deg);background:var(--surface);box-shadow:inset 0 0 0 1px rgba(255,255,255,.5)}
+    .milestone-glyph.started{border-color:#64af8b;background:linear-gradient(135deg,#64af8b 50%,var(--surface) 50%)}
+    .milestone-glyph.completed{border-color:var(--accent);background:var(--accent)}
+    .milestone-name{min-width:0;color:var(--text-soft);font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .milestone-meta{color:var(--muted);font-size:10.5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+    .milestone-more{color:var(--muted);font-size:15px;letter-spacing:1px;line-height:1}
+    .milestone-static .managed-badge{justify-self:end}
+    .milestone-unassigned{grid-template-columns:20px minmax(0,1fr) auto;color:var(--muted)}
+    .milestone-unassigned .milestone-name{color:var(--muted);font-weight:500}
+    .milestone-form{display:grid;grid-template-columns:minmax(0,1fr) 130px;gap:8px;padding:10px 11px 11px;border-top:1px solid var(--line);background:var(--surface-raised)}
+    .milestone-form .control{width:100%;height:30px}
+    .milestone-form textarea.control{grid-column:1/-1;height:58px;padding:7px 9px;resize:vertical;line-height:1.45}
+    .milestone-form-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:6px}
+    .milestone-create{margin-bottom:8px;padding:11px;border:1px dashed var(--line-strong);border-radius:8px;background:var(--surface-raised)}
+    .milestone-create .milestone-form{margin:-1px;padding:0;border:0;background:transparent}
 
     .issue-page{min-height:calc(100vh - 52px)}
     .issue-toolbar{height:42px;display:flex;align-items:center;padding:0 18px;border-bottom:1px solid var(--line);color:var(--muted);font-size:11.5px}
@@ -470,12 +500,16 @@
             <h1 class="settings-heading" id="settingsHeading">Project settings</h1>
             <p class="settings-description">The repository configuration that shapes identifiers, issue states, milestones, and labels across this board.</p>
           </div>
-          <aside class="managed-note" aria-label="Configuration ownership">
+          <aside class="managed-note" id="settingsManagedNote" aria-label="Configuration ownership">
             <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M5 2.5h4l2.5 2.5v8.5h-7v-11Z" stroke="currentColor" stroke-linejoin="round"/><path d="M9 2.5V5h2.5M6.5 8h3M6.5 10.5h3" stroke="currentColor" stroke-linecap="round"/></svg>
             <div><strong>Managed by <code>.local-board/project.toml</code></strong><p>This view is read-only. Update the tracked file and apply the configuration to make changes.</p></div>
           </aside>
         </div>
-        <div class="settings-grid">
+        <div class="settings-tabs" role="tablist" aria-label="Settings sections">
+          <button class="settings-tab" id="settingsOverviewTab" type="button" role="tab" data-settings-tab="overview" aria-controls="settingsOverviewPanel" aria-selected="true">Overview</button>
+          <button class="settings-tab" id="settingsMilestonesTab" type="button" role="tab" data-settings-tab="milestones" aria-controls="settingsMilestonesPanel" aria-selected="false" tabindex="-1">Milestones</button>
+        </div>
+        <div class="settings-grid" id="settingsOverviewPanel" role="tabpanel" aria-labelledby="settingsOverviewTab" tabindex="0">
           <div>
             <section class="settings-section" aria-labelledby="projectOverviewHeading">
               <div class="settings-section-heading"><h2 id="projectOverviewHeading">Project overview</h2><span>Repository identity</span></div>
@@ -494,6 +528,12 @@
             </div>
           </section>
         </div>
+        <section class="settings-section milestone-manager hidden" id="settingsMilestonesPanel" role="tabpanel" aria-labelledby="settingsMilestonesTab milestonesHeading" tabindex="0">
+          <div class="settings-section-heading"><div><h2 id="milestonesHeading">Board milestones</h2><span>Group issues into a meaningful deliverable</span></div><div id="settingsMilestoneActions"></div></div>
+          <p class="milestone-manager-copy">Configuration-managed milestones are edited in <code>project.toml</code>. Add a board milestone here when the work is local to this board.</p>
+          <div class="milestone-create hidden" id="settingsMilestoneCreate"></div>
+          <div class="milestone-list" id="settingsMilestones"></div>
+        </section>
       </section>
 
       <section class="issue-page hidden" id="issueView" aria-labelledby="issueTitleHeading">
@@ -538,7 +578,7 @@ let token='';
 try{token=localStorage.getItem('localBoardToken')||''}catch{token=''}
 let data={},identity=null,currentIssue=null,currentView='issues';
 let currentLayout='list';
-let editingIssue=false,editingCommentId=null;
+let editingIssue=false,editingCommentId=null,creatingMilestone=false,activeSettingsTab='overview';
 
 function esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
 function initials(name){return String(name||'?').split(/\s+/).map(part=>part[0]).join('').slice(0,2)}
@@ -631,6 +671,7 @@ function filteredIssues(){
   const query=(searchInput.value||'').trim().toLowerCase(),milestone=milestoneFilter.value,assignee=assigneeFilter.value;
   return (data.issues||[]).filter(issue=>(!query||issue.title.toLowerCase().includes(query)||issue.identifier.toLowerCase().includes(query)||(issue.labels||[]).some(label=>String(label).toLowerCase().includes(query)))&&(!milestone||String(issue.milestone_id)===milestone)&&(!assignee||String(issue.assignee_id)===assignee));
 }
+function hasActiveIssueFilters(){return Boolean(searchInput.value.trim()||milestoneFilter.value||assigneeFilter.value)}
 
 function statusIndicator(status,label=''){
   const category=status?.category||'unstarted',accessibility=label?`role="img" aria-label="${esc(label)} status" title="${esc(label)}"`:'aria-hidden="true"';
@@ -653,17 +694,19 @@ function boardCard(issue,status){
 
 function renderIssues(){
   const issues=filteredIssues(),statuses=statusesSorted();
+  const visibleStatuses=hasActiveIssueFilters()?statuses.filter(status=>issues.some(issue=>issue.status===status.name)):statuses;
   const filters=[];if(searchInput.value.trim())filters.push(`matching “${searchInput.value.trim()}”`);if(milestoneFilter.value)filters.push(milestoneName(+milestoneFilter.value));if(assigneeFilter.value)filters.push((data.actors||[]).find(actor=>String(actor.id)===assigneeFilter.value)?.name);
   filterSummary.textContent=`${issues.length} ${issues.length===1?'issue':'issues'}${filters.length?' · '+filters.filter(Boolean).join(' · '):''}`;
-  issueList.innerHTML=statuses.length?statuses.map(status=>{
+  const noMatches=hasActiveIssueFilters()&&!issues.length;
+  issueList.innerHTML=!statuses.length?'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>':noMatches?'<div class="zero-state"><div><strong>No matching issues</strong>No issues match the active filters.</div></div>':visibleStatuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
     const add=canWrite()?`<button class="status-add" type="button" data-new-status="${esc(status.name)}" aria-label="Create issue in ${esc(status.name)}">+</button>`:'';
     return `<section class="status-group" aria-labelledby="status-${status.position}"><div class="status-heading">${statusIndicator(status)}<span class="status-name" id="status-${status.position}">${esc(status.name)}</span><span class="status-count">${items.length}</span>${add}</div>${items.map(issue=>issueRow(issue,status)).join('')||'<div class="row-empty">No issues here yet.</div>'}</section>`;
-  }).join(''):'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>';
-  issueBoard.innerHTML=statuses.length?statuses.map(status=>{
+  }).join('');
+  issueBoard.innerHTML=!statuses.length?'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>':noMatches?'<div class="zero-state"><div><strong>No matching issues</strong>No issues match the active filters.</div></div>':visibleStatuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
     return `<section class="board-column"><div class="column-heading">${statusIndicator(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span></div>${items.map(issue=>boardCard(issue,status)).join('')||'<div class="row-empty">No issues here yet.</div>'}</section>`;
-  }).join(''):'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>';
+  }).join('');
 }
 
 function renderActivity(){
@@ -709,8 +752,34 @@ function settingsLabelItems(labels){
   return labels.map(label=>`<span class="label-chip"><span class="label-dot" style="--label-color:${esc(label.color||'#8d8d95')}"></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None configured</span>';
 }
 
+function milestoneProgress(milestone){
+  const issues=(data.issues||[]).filter(issue=>issue.milestone_id===milestone.id),total=issues.length,completed=issues.filter(issue=>statusForName(issue.status).category==='completed').length;
+  return {total,completed,percent:total?Math.round(completed/total*100):0,state:total&&completed===total?'completed':completed?'started':'empty'};
+}
+function milestoneProgressCopy(progress){return progress.total?`${progress.percent}% · ${progress.completed} of ${progress.total}`:'No issues yet'}
+function milestoneForm(milestone=null){
+  const creating=!milestone,action=creating?'Create milestone':'Save changes';
+  return `<form class="milestone-form" data-form="${creating?'create-milestone':'edit-milestone'}" ${milestone?`data-milestone="${milestone.id}"`:''}><input class="control" ${creating?'id="newMilestoneName"':''} name="name" value="${esc(milestone?.name||'')}" placeholder="Milestone name" aria-label="Milestone name" maxlength="120" required><input class="control" type="date" name="due_at" value="${esc(milestone?.due_at||'')}" aria-label="Target date"><textarea class="control" name="description" placeholder="Description (optional)" aria-label="Milestone description">${esc(milestone?.description||'')}</textarea><div class="milestone-form-actions"><button class="button quiet small" type="button" data-action="cancel-milestone">Cancel</button><button class="button primary small" type="submit">${action}</button></div></form>`;
+}
+function milestoneRow(milestone){
+  const progress=milestoneProgress(milestone),content=`<span class="milestone-glyph ${progress.state}" aria-hidden="true"></span><span class="milestone-name">${esc(milestone.name)}</span><span class="milestone-meta">${esc(milestoneProgressCopy(progress))}${milestone.due_at?` · ${esc(milestone.due_at)}`:''}</span>`;
+  if(milestone.managed_by==='config')return `<div class="milestone-static">${content}<span class="managed-badge">TOML</span></div>`;
+  if(!canWrite())return `<div class="milestone-static">${content}<span></span></div>`;
+  return `<details class="milestone-editor" data-milestone-editor="${milestone.id}"><summary aria-label="Edit milestone ${esc(milestone.name)}">${content}<span class="milestone-more" aria-hidden="true">···</span></summary>${milestoneForm(milestone)}</details>`;
+}
+function renderMilestones(){
+  const milestones=data.board?.milestones||[],unassigned=(data.issues||[]).filter(issue=>!issue.milestone_id);
+  settingsMilestoneActions.innerHTML=canWrite()?'<button class="button small" type="button" data-action="create-milestone">Add milestone</button>':'';
+  settingsMilestoneCreate.classList.toggle('hidden',!creatingMilestone);
+  settingsMilestoneCreate.innerHTML=creatingMilestone?milestoneForm():'';
+  settingsMilestones.innerHTML=`${milestones.map(milestoneRow).join('')}<div class="milestone-unassigned"><span class="milestone-glyph empty" aria-hidden="true"></span><span class="milestone-name">No milestone</span><span class="milestone-meta">${unassigned.length} ${unassigned.length===1?'issue':'issues'}</span></div>`;
+  $$('#settingsMilestones details.milestone-editor').forEach(editor=>editor.addEventListener('toggle',()=>{
+    if(editor.open){dismissMilestoneEditors(editor);requestAnimationFrame(()=>editor.querySelector('input')?.focus())}
+  }));
+}
+
 function renderSettings(){
-  const board=data.board||{},statuses=statusesSorted(),milestones=board.milestones||[],labels=board.labels||[];
+  const board=data.board||{},statuses=statusesSorted(),labels=board.labels||[];
   settingsProject.innerHTML=`
     <div class="settings-row"><span>Prefix</span><strong>${esc(board.prefix||'Not configured')}</strong></div>
     <div class="settings-row"><span>Name</span><strong>${esc(board.name||'Repository')}</strong></div>
@@ -719,9 +788,10 @@ function renderSettings(){
     <div class="settings-row"><span>Start policy</span><strong>${board.agent_policy?.require_assignee_before_start!==false?'Assignee required':'Unassigned starts allowed'}</strong></div>`;
   settingsCatalog.innerHTML=`
     <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5" stroke="currentColor"/><path d="M5.5 8h5" stroke="currentColor" stroke-linecap="round"/></svg></span><span class="catalog-copy"><strong>Statuses · ${statuses.length}</strong><span class="status-flow">${settingsStatusFlow(statuses)}</span></span><span class="managed-badge">TOML</span></div>
-    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3.5h10v9H3zM5.5 2v3M10.5 2v3M3 6.5h10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="catalog-copy"><strong>Milestones · ${milestones.length}</strong><small>${esc(catalogSummary(milestones))}</small></span><span class="managed-badge">TOML</span></div>
     <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m8.2 2.5 5.3 5.3-5.7 5.7-5.3-5.3V2.5h5.7Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="5.3" cy="5.3" r=".8" fill="currentColor"/></svg></span><span class="catalog-copy"><strong>Labels · ${labels.length}</strong><span class="catalog-items">${settingsLabelItems(labels)}</span></span><span class="managed-badge">TOML</span></div>`;
   configPreview.textContent=projectToml();
+  renderMilestones();
+  setSettingsTab(activeSettingsTab);
 }
 
 function statusOptions(selected){return statusesSorted().map(status=>`<option value="${esc(status.name)}" ${status.name===selected?'selected':''}>${esc(status.name)}</option>`).join('')}
@@ -911,6 +981,75 @@ async function refreshDetail(){
 function dismissPropertyPickers(except=null){
   $$('details.property-picker[open],details.label-editor[open]').forEach(picker=>{if(picker!==except)picker.open=false});
 }
+function setSettingsTab(tab){
+  activeSettingsTab=tab==='milestones'?'milestones':'overview';
+  const milestones=activeSettingsTab==='milestones';
+  settingsOverviewPanel.classList.toggle('hidden',milestones);settingsMilestonesPanel.classList.toggle('hidden',!milestones);settingsManagedNote.classList.toggle('hidden',milestones);settingsView.querySelector('.settings-intro').classList.toggle('milestones-active',milestones);
+  $$('[data-settings-tab]').forEach(button=>{
+    const active=button.dataset.settingsTab===activeSettingsTab;
+    button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;
+  });
+}
+function handleSettingsTabs(event){
+  const tab=event.target.closest('[data-settings-tab]');
+  if(!tab)return false;
+  setSettingsTab(tab.dataset.settingsTab);return true;
+}
+function handleSettingsTabKeydown(event){
+  const tab=event.target.closest('[data-settings-tab]');
+  if(!tab||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+  const tabs=$$('[data-settings-tab]');let index=tabs.indexOf(tab);
+  if(event.key==='Home')index=0;else if(event.key==='End')index=tabs.length-1;else index=(index+(event.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;
+  event.preventDefault();tabs[index].focus();setSettingsTab(tabs[index].dataset.settingsTab);
+}
+function dismissMilestoneEditors(except=null){
+  $$('#settingsMilestones details.milestone-editor[open]').forEach(editor=>{if(editor!==except)editor.open=false});
+}
+async function handleSettingsAction(event){
+  const target=event.target.closest('[data-action]');
+  if(!target){
+    const editor=event.target.closest('details.milestone-editor');
+    if(!editor)dismissMilestoneEditors();
+    else dismissMilestoneEditors(editor);
+    return;
+  }
+  try{
+    if(target.dataset.action==='create-milestone'){
+      if(!canWrite())return;
+      creatingMilestone=true;dismissMilestoneEditors();renderSettings();
+      requestAnimationFrame(()=>$('#newMilestoneName')?.focus());
+    }else if(target.dataset.action==='cancel-milestone'){
+      creatingMilestone=false;
+      const editor=target.closest('details.milestone-editor'),milestoneId=editor?.dataset.milestoneEditor;if(editor)editor.open=false;
+      renderSettings();
+      requestAnimationFrame(()=>milestoneId?$(`details[data-milestone-editor="${milestoneId}"] summary`)?.focus():$('[data-action="create-milestone"]')?.focus());
+    }
+  }catch(error){notify(error.message)}
+}
+async function handleSettingsSubmit(event){
+  const form=event.target.closest('[data-form="create-milestone"],[data-form="edit-milestone"]');
+  if(!form)return;
+  event.preventDefault();
+  if(!canWrite())return;
+  const name=form.elements.name.value.trim();if(!name)return;
+  const body={name,description:form.elements.description.value,due_at:form.elements.due_at.value||null};
+  try{
+    const milestone=form.dataset.form==='create-milestone'
+      ?await api('/api/milestones',{method:'POST',body:JSON.stringify(body)})
+      :await api(`/api/milestones/${form.dataset.milestone}`,{method:'PATCH',body:JSON.stringify(body)});
+    creatingMilestone=false;await reloadBoard();notify(form.dataset.form==='create-milestone'?'Milestone added':'Milestone updated');
+    requestAnimationFrame(()=>$(`details[data-milestone-editor="${milestone.id}"] summary`)?.focus());
+  }catch(error){notify(error.message)}
+}
+function handleMilestoneEditorDismissal(event){
+  if(event.key!=='Escape')return;
+  const editor=$$('#settingsMilestones details.milestone-editor[open]').find(item=>item.getClientRects().length);
+  if(!editor&&!creatingMilestone)return;
+  event.preventDefault();const milestoneId=editor?.dataset.milestoneEditor;creatingMilestone=false;
+  if(editor)editor.open=false;
+  renderSettings();
+  requestAnimationFrame(()=>milestoneId?$(`details[data-milestone-editor="${milestoneId}"] summary`)?.focus():$('[data-action="create-milestone"]')?.focus());
+}
 function focusPropertyPicker(field){
   const summary=$$(`details[data-property-picker="${field}"] > summary`).find(item=>item.getClientRects().length);
   summary?.focus();
@@ -1035,6 +1174,7 @@ $$('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+but
 issueList.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
 issueBoard.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref)});
 issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('keydown',handleCommentShortcut);issueView.addEventListener('keydown',handleInlineEditShortcut);issueView.addEventListener('keydown',handlePropertyPickerDismissal);
+settingsView.addEventListener('click',event=>{if(!handleSettingsTabs(event))handleSettingsAction(event)});settingsView.addEventListener('submit',handleSettingsSubmit);settingsView.addEventListener('keydown',handleSettingsTabKeydown);settingsView.addEventListener('keydown',handleMilestoneEditorDismissal);
 window.addEventListener('popstate',event=>restoreLocation(event.state));
 
 loginForm.addEventListener('submit',async event=>{

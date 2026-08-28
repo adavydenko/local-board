@@ -61,12 +61,17 @@ An empty state should state the current condition and, when the person can act, 
 - Prefer “No comments yet — add context, a decision, or a handoff.” where comments are actionable.
 - In a status group, “No issues here yet.” is enough when the create affordance is already adjacent.
 - If the user cannot act, do not promise an unavailable action; explain the configuration or permission boundary instead.
+- When a search, milestone, or assignee filter is active, render only status groups that contain a matching issue. If nothing matches, show one focused empty state; retain the full workflow, including empty groups, only in the unfiltered workspace.
 
 ## Settings and configuration
 
 - Settings should distinguish overview from editing. The overview mirrors `project.toml` and clearly marks it as managed configuration.
+- Give an operational Settings area its own peer tab when it needs regular attention. Do not bury an ongoing management surface below a long configuration preview.
 - Display all configured labels with their colors and all configured statuses in flow order. Never truncate a catalog in a way that makes it look complete.
-- Future prefix, milestone, tag, and status-management screens belong under Settings, but only after their persistence and permissions are real.
+- Milestone management belongs under Settings once persistence is real. Keep it a compact list: name first, then a completed-issue progress summary and an optional target date.
+- A milestone list must distinguish configuration-managed entries from board-managed entries. Configuration-managed milestones are read-only in the UI and point back to `project.toml`; board-managed entries may be created or edited on demand.
+- Use completed issues for milestone progress. Show both the percentage and the underlying count (for example, `50% · 3 of 6`) so the indicator remains interpretable on small milestones.
+- Future prefix, tag, and status-management screens belong under Settings, but only after their persistence and permissions are real.
 
 ## Accessibility and interaction quality
 

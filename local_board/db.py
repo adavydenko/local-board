@@ -474,7 +474,7 @@ class Board:
             ]
             result["milestones"] = [
                 dict(row)
-                for row in db.execute("SELECT id,key,name,description,due_at FROM milestones ORDER BY id")
+                for row in db.execute("SELECT id,key,name,description,due_at,managed_by FROM milestones ORDER BY id")
             ]
             result["priorities"] = list(PRIORITIES)
             return result

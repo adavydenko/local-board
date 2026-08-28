@@ -104,6 +104,21 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn('return labels.map(label=>', self.html)
         self.assertIn('class="catalog-items"', self.html)
 
+    def test_settings_offers_a_read_first_milestone_manager(self):
+        self.assertIn('id="settingsMilestones"', self.html)
+        self.assertIn('data-action="create-milestone"', self.html)
+        self.assertIn('function milestoneProgress(milestone)', self.html)
+        self.assertIn('/api/milestones', self.html)
+        self.assertIn('Configuration-managed milestones are edited in <code>project.toml</code>.', self.html)
+
+    def test_settings_gives_milestones_a_dedicated_tab(self):
+        self.assertIn('role="tablist" aria-label="Settings sections"', self.html)
+        self.assertIn('data-settings-tab="overview"', self.html)
+        self.assertIn('data-settings-tab="milestones"', self.html)
+        self.assertIn('id="settingsOverviewPanel"', self.html)
+        self.assertIn('id="settingsMilestonesPanel"', self.html)
+        self.assertIn('function setSettingsTab(tab)', self.html)
+
     def test_status_indicators_follow_categories_across_issue_views(self):
         for category in ("backlog", "unstarted", "started", "completed", "canceled"):
             self.assertIn(f".status-indicator.{category}", self.html)
@@ -111,6 +126,11 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn("items.map(issue=>issueRow(issue,status))", self.html)
         self.assertIn("function boardCard(issue,status)", self.html)
         self.assertIn("items.map(issue=>boardCard(issue,status))", self.html)
+
+    def test_active_issue_filters_hide_empty_status_groups(self):
+        self.assertIn('function hasActiveIssueFilters()', self.html)
+        self.assertIn('const visibleStatuses=hasActiveIssueFilters()?statuses.filter', self.html)
+        self.assertIn('No issues match the active filters.', self.html)
 
     def test_issue_detail_keeps_secondary_context_in_a_compact_rail(self):
         self.assertIn('function settingsStatusFlow(statuses)', self.html)
@@ -288,6 +308,13 @@ class WebUiTest(unittest.TestCase):
         self.assertEqual(status, 409)
         self.assertEqual(dup["error"]["code"], "conflict")
         self.assertIn("error", dup)
+
+    def test_dashboard_exposes_each_milestones_management_source(self):
+        _, milestone = self.request("POST", "/api/milestones", body={"name": "Board milestone"})
+        status, dashboard = self.request("GET", "/api/dashboard")
+        self.assertEqual(status, 200)
+        listed = next(item for item in dashboard["board"]["milestones"] if item["id"] == milestone["id"])
+        self.assertEqual(listed["managed_by"], "manual")
 
     def test_create_label_then_duplicate_name_conflicts(self):
         status, label = self.request("POST", "/api/labels", body={"name": "urgent"})
