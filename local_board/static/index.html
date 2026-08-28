@@ -210,6 +210,22 @@
     .issue-kicker{display:flex;align-items:center;gap:8px;margin-bottom:11px;color:var(--muted);font-size:11px}
     .issue-kicker .label-chip{height:19px}
     .issue-title-heading{margin:0 0 24px;font-size:28px;line-height:1.24;letter-spacing:-.032em;font-weight:640;color:#202024}
+    .issue-title-wrap,.description-wrap{position:relative}
+    .inline-edit,.comment-edit{height:24px;padding:0 7px;border:0;border-radius:5px;background:var(--hover);color:var(--muted);font-size:10.5px;font-weight:550;opacity:0;transition:opacity .12s,color .12s}
+    .inline-edit{width:24px;padding:0;font-size:0}
+    .inline-edit:after{content:"✎";font-size:13px;line-height:1}
+    .inline-edit:hover,.comment-edit:hover{background:var(--pressed);color:var(--text)}
+    .issue-title-wrap .inline-edit{position:absolute;right:-36px;top:2px}
+    .description-wrap .inline-edit{position:absolute;right:-36px;top:0}
+    .issue-title-wrap:hover .inline-edit,.issue-title-wrap:focus-within .inline-edit,.description-wrap:hover .inline-edit,.description-wrap:focus-within .inline-edit,.comment:hover .comment-edit,.comment:focus-within .comment-edit{opacity:1}
+    .issue-editor{display:grid;gap:10px;margin:0 0 24px}
+    .issue-editor-title{width:100%;height:42px;border:1px solid var(--line-strong);border-radius:7px;background:var(--surface);padding:0 11px;font-size:20px;font-weight:620;letter-spacing:-.02em;outline:none}
+    .issue-editor-title:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+    .issue-editor-description{display:block;width:100%;min-height:190px;border:1px solid var(--line);border-radius:7px;background:var(--surface);padding:10px 11px;resize:vertical;line-height:1.65;outline:none}
+    .issue-editor-description:focus{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+    .editor-footer{display:flex;align-items:center;gap:9px;min-height:30px}
+    .editor-hint{color:var(--muted);font-size:10px}
+    .editor-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
     .markdown{font-size:14px;line-height:1.7;color:#3c3c42;overflow-wrap:anywhere}
     .markdown.empty-copy{color:var(--muted);font-style:italic}
     .markdown h1,.markdown h2,.markdown h3{color:var(--text);line-height:1.35;letter-spacing:-.01em}
@@ -228,7 +244,13 @@
     .comment-head{display:flex;align-items:baseline;gap:7px;margin-bottom:4px}
     .comment-head strong{font-size:11.5px;font-weight:650}
     .comment-head time{color:var(--muted);font-size:10px}
+    .comment-edited{color:var(--muted);font-size:10px}
+    .comment-edit{margin-left:auto;align-self:center}
     .comment-body{font-size:12.5px;line-height:1.6;color:var(--text-soft)}
+    .comment-editor{display:grid;gap:7px;padding:7px 8px 8px;border:1px solid var(--line);border-radius:7px;background:var(--surface-raised)}
+    .comment-editor textarea{display:block;width:100%;min-height:104px;border:0;border-radius:5px;background:var(--surface);padding:8px 9px;resize:vertical;line-height:1.6;outline:none}
+    .comment-editor textarea:focus{box-shadow:0 0 0 2px var(--accent-soft)}
+    .comment-editor .editor-footer{min-height:26px}
     .comment-composer{margin-top:18px;border:1px solid var(--line);border-radius:8px;background:var(--surface);overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.025)}
     .composer-header{display:flex;align-items:center;gap:8px;padding:10px 11px 0;color:var(--text-soft);font-size:11px;font-weight:600}
     .composer-header .mini-avatar{width:22px;height:22px}
@@ -346,7 +368,7 @@
       .status-heading{top:48px;padding:0 12px}.issue-row{min-height:48px;grid-template-columns:18px 55px 16px minmax(0,1fr) 22px;gap:6px;padding:6px 12px}.row-labels,.assignee-cell{display:none}.issue-title{font-size:12.5px}.row-empty{padding-left:44px}
       .board-layout{grid-auto-flow:row;grid-auto-columns:auto;padding:0 10px 20px;min-height:0}.board-column{width:100%}.column-heading{position:sticky;top:48px;z-index:3;background:var(--canvas)}
       .activity-page{padding:18px 15px 50px}.activity-row{grid-template-columns:26px minmax(0,1fr)}.activity-time{grid-column:2}
-      .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-sidebar{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .issue-sidebar{display:block;position:static;border:0;padding:10px 0 0}.mobile-properties .property,.mobile-properties .property-picker summary{grid-template-columns:78px minmax(0,1fr)}.mobile-properties .property-menu{position:static;width:auto;margin:3px 0 5px}
+      .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-title-wrap .inline-edit,.description-wrap .inline-edit{right:0}.issue-sidebar{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .issue-sidebar{display:block;position:static;border:0;padding:10px 0 0}.mobile-properties .property,.mobile-properties .property-picker summary{grid-template-columns:78px minmax(0,1fr)}.mobile-properties .property-menu{position:static;width:auto;margin:3px 0 5px}
       .comment-input{min-height:104px;height:104px}.side-form.git-form{grid-template-columns:1fr auto}.side-form.git-form .control:last-of-type{grid-column:1}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}.dialog-form{max-height:calc(100vh - 20px)}.field-row{grid-template-columns:1fr}.toast{bottom:66px}
       .settings-page{padding:18px 15px 50px}.settings-grid{gap:8px}.managed-note{padding:11px}.config-preview{max-height:420px}
     }
@@ -516,6 +538,7 @@ let token='';
 try{token=localStorage.getItem('localBoardToken')||''}catch{token=''}
 let data={},identity=null,currentIssue=null,currentView='issues';
 let currentLayout='list';
+let editingIssue=false,editingCommentId=null;
 
 function esc(value){return String(value??'').replace(/[&<>"']/g,char=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]))}
 function initials(name){return String(name||'?').split(/\s+/).map(part=>part[0]).join('').slice(0,2)}
@@ -796,16 +819,30 @@ function propertyMarkup(issue){
     <button class="button ${mine?'':'primary'} claim-action" type="button" data-action="${mine?'release':'claim'}">${mine?'Release issue':'Claim issue'}</button>`;
 }
 
+function canEditComment(comment){return canWrite()&&(comment.author_id===identity?.id||identity?.role==='admin')}
+function issueNarrativeMarkup(issue){
+  if(editingIssue)return `<form class="issue-editor" data-form="edit-issue"><input class="issue-editor-title" id="editIssueTitle" name="title" value="${esc(issue.title)}" aria-label="Issue title" maxlength="200" required><textarea class="issue-editor-description" id="editIssueDescription" name="description" aria-label="Issue description">${esc(issue.description)}</textarea><div class="editor-footer"><span class="editor-hint">Markdown supported · ⌘↵ to save · Esc to cancel</span><span class="editor-actions"><button class="button quiet small" type="button" data-action="cancel-edit-issue">Cancel</button><button class="button primary small" type="submit">Save changes</button></span></div></form>`;
+  const editTitle=canWrite()?'<button class="inline-edit" type="button" data-action="edit-issue" data-focus="title" aria-label="Edit issue title">Edit</button>':'';
+  const editDescription=canWrite()?'<button class="inline-edit" type="button" data-action="edit-issue" data-focus="description" aria-label="Edit issue description">Edit description</button>':'';
+  return `<div class="issue-title-wrap"><h1 class="issue-title-heading" id="issueTitleHeading">${esc(issue.title)}</h1>${editTitle}</div><div class="description-wrap">${markdown(issue.description)}${editDescription}</div>`;
+}
+function commentMarkup(comment){
+  const editable=canEditComment(comment),edited=comment.updated_at!==comment.created_at;
+  const edit=editable?`<button class="inline-edit comment-edit" type="button" data-action="edit-comment" data-comment="${comment.id}" aria-label="Edit your comment">Edit</button>`:'';
+  const header=action=>`<div class="comment-head"><strong>${esc(comment.author)}</strong><time datetime="${esc(comment.created_at)}">${esc(relativeTime(comment.created_at))}</time>${edited?'<span class="comment-edited">Edited</span>':''}${action}</div>`;
+  if(editingCommentId===comment.id)return `<article class="comment"><span class="mini-avatar">${esc(initials(comment.author))}</span><form class="comment-editor" data-form="edit-comment" data-comment="${comment.id}">${header('')}<textarea id="editComment${comment.id}" name="body" aria-label="Edit comment" required>${esc(comment.body)}</textarea><div class="editor-footer"><span class="editor-hint">Markdown supported · ⌘↵ to save · Esc to cancel</span><span class="editor-actions"><button class="button quiet small" type="button" data-action="cancel-edit-comment">Cancel</button><button class="button primary small" type="submit">Save</button></span></div></form></article>`;
+  return `<article class="comment"><span class="mini-avatar">${esc(initials(comment.author))}</span><div>${header(edit)}<div class="comment-body">${markdown(comment.body)}</div></div></article>`;
+}
+
 function renderDetail(){
   const issue=currentIssue,parent=issue.parent_id?findIssueRef(issue.parent_id):null;
-  const comments=(issue.comments||[]).map(comment=>`<article class="comment"><span class="mini-avatar">${esc(initials(comment.author))}</span><div><div class="comment-head"><strong>${esc(comment.author)}</strong><time datetime="${esc(comment.created_at)}">${esc(relativeTime(comment.created_at))}</time></div><div class="comment-body">${markdown(comment.body)}</div></div></article>`).join('');
+  const comments=(issue.comments||[]).map(comment=>commentMarkup(comment)).join('');
   const propertyContent=propertyMarkup(issue);
   const sidebarContent=`${propertyContent}${structureMarkup(issue,parent)}${blockingMarkup(issue)}${gitLinksMarkup(issue)}`;
   const commentForm=canWrite()?`<form class="comment-composer" data-form="comment"><div class="composer-header"><span class="mini-avatar">${esc(initials(identity?.name))}</span><span>Leave a comment</span></div><textarea class="control comment-input" name="body" rows="4" placeholder="Write a comment…" aria-label="Comment" required></textarea><div class="composer-footer"><span class="composer-hint">Markdown supported · ⌘↵ to send</span><span class="composer-actions"><button class="button quiet small" type="button" data-action="cancel-comment">Cancel</button><button class="button primary small" type="submit">Send</button></span></div></form>`:'';
   issueToolbarId.textContent=issue.identifier;
   issueDocument.innerHTML=`<div class="issue-kicker">${statusIndicator({category:issue.category})}<span>${esc(issue.status)}</span>${issue.blocked?'<span class="label-chip" style="color:var(--danger)">Blocked</span>':''}</div>
-    <h1 class="issue-title-heading" id="issueTitleHeading">${esc(issue.title)}</h1>
-    ${markdown(issue.description)}
+    ${issueNarrativeMarkup(issue)}
     <details class="mobile-properties"><summary>Issue details</summary><div class="issue-sidebar">${sidebarContent}</div></details>
     <section class="detail-section"><div class="section-heading"><h2>Activity</h2><span class="section-count">${issue.comments_total||0} ${(issue.comments_total||0)===1?'comment':'comments'}</span></div><div class="comments">${comments||'<div class="empty-inline">No comments yet — add context, a decision, or a handoff.</div>'}</div>${commentForm}</section>`;
   issueSidebar.innerHTML=sidebarContent;
@@ -828,7 +865,7 @@ function setLayout(layout){
 
 async function openDetail(ref,{updateHistory=true,focusContent=true}={}){
   try{
-    currentIssue=await api('/api/issues/'+encodeURIComponent(ref));renderDetail();setView('issue',{updateHistory:false,focusContent});
+    currentIssue=await api('/api/issues/'+encodeURIComponent(ref));editingIssue=false;editingCommentId=null;renderDetail();setView('issue',{updateHistory:false,focusContent});
     if(updateHistory)history.pushState({view:'issue',issue:ref,fromApp:true},'',`#issue/${encodeURIComponent(ref)}`);
   }catch(error){notify(error.message)}
 }
@@ -901,6 +938,25 @@ async function handleIssueAction(event){
     if(action==='cancel-comment'){
       const form=actionTarget.closest('[data-form="comment"]');form?.reset();return;
     }
+    if(action==='edit-issue'){
+      if(!canWrite())return;
+      editingIssue=true;editingCommentId=null;renderDetail();
+      requestAnimationFrame(()=>$(actionTarget.dataset.focus==='description'?'#editIssueDescription':'#editIssueTitle')?.focus());
+      return;
+    }
+    if(action==='cancel-edit-issue'){
+      editingIssue=false;renderDetail();return;
+    }
+    if(action==='edit-comment'){
+      const comment=(currentIssue.comments||[]).find(item=>item.id===+actionTarget.dataset.comment);
+      if(!comment||!canEditComment(comment))return;
+      editingIssue=false;editingCommentId=comment.id;renderDetail();
+      requestAnimationFrame(()=>$('#editComment'+comment.id)?.focus());
+      return;
+    }
+    if(action==='cancel-edit-comment'){
+      editingCommentId=null;renderDetail();return;
+    }
     if(action==='property-trigger'){
       const picker=actionTarget.closest('.property-picker,.label-editor');
       setTimeout(()=>{if(picker?.open){dismissPropertyPickers(picker);focusOpenPropertyPicker(picker)}});
@@ -930,6 +986,12 @@ async function handleDetailSubmit(event){
   try{
     if(form.dataset.form==='comment'){
       const body=form.body.value.trim();if(!body)return;await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/comments`,{method:'POST',body:JSON.stringify({body})});
+    }else if(form.dataset.form==='edit-issue'){
+      const title=form.elements.title.value.trim();if(!title)return;
+      editingIssue=false;await patchIssue({title,description:form.elements.description.value});return;
+    }else if(form.dataset.form==='edit-comment'){
+      const body=form.body.value.trim();if(!body)return;
+      editingCommentId=null;await api(`/api/comments/${form.dataset.comment}`,{method:'PATCH',body:JSON.stringify({body})});await refreshDetail();notify('Comment updated');return;
     }else if(form.dataset.form==='dependency'){
       if(!form.depends_on.value)return;await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/dependencies`,{method:'POST',body:JSON.stringify({depends_on:+form.depends_on.value})});
     }else if(form.dataset.form==='gitlink'){
@@ -943,6 +1005,15 @@ function handleCommentShortcut(event){
   if(!(event.metaKey||event.ctrlKey)||event.key!=='Enter'||event.target?.name!=='body'||event.target?.tagName!=='TEXTAREA')return;
   const form=event.target.closest('[data-form="comment"]');if(!form)return;
   event.preventDefault();form.requestSubmit();
+}
+function handleInlineEditShortcut(event){
+  const form=event.target.closest('[data-form="edit-issue"],[data-form="edit-comment"]');if(!form)return;
+  if(event.key==='Escape'){
+    event.preventDefault();editingIssue=false;editingCommentId=null;renderDetail();return;
+  }
+  if((event.metaKey||event.ctrlKey)&&event.key==='Enter'){
+    event.preventDefault();form.requestSubmit();
+  }
 }
 function handlePropertyPickerDismissal(event){
   if(event.key!=='Escape')return;
@@ -963,7 +1034,7 @@ $$('.layout-button').forEach(button=>button.addEventListener('click',()=>setLayo
 $$('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
 issueList.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
 issueBoard.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref)});
-issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('keydown',handleCommentShortcut);issueView.addEventListener('keydown',handlePropertyPickerDismissal);
+issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('keydown',handleCommentShortcut);issueView.addEventListener('keydown',handleInlineEditShortcut);issueView.addEventListener('keydown',handlePropertyPickerDismissal);
 window.addEventListener('popstate',event=>restoreLocation(event.state));
 
 loginForm.addEventListener('submit',async event=>{

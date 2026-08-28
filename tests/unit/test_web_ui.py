@@ -122,6 +122,19 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn('Add label', self.html)
         self.assertNotIn('id="pageTitle"', self.html)
 
+    def test_issue_workspace_offers_on_demand_narrative_and_author_comment_editing(self):
+        self.assertIn('data-action="edit-issue"', self.html)
+        self.assertIn('data-form="edit-issue"', self.html)
+        self.assertIn('data-action="edit-comment"', self.html)
+        self.assertIn('data-form="edit-comment"', self.html)
+        self.assertIn('class="inline-edit comment-edit"', self.html)
+        self.assertIn("comment.author_id===identity?.id||identity?.role==='admin'", self.html)
+        self.assertIn("comment.updated_at!==comment.created_at", self.html)
+
+    def test_inline_edit_actions_do_not_reserve_issue_description_width(self):
+        self.assertNotIn('.description-wrap>.markdown{padding-right', self.html)
+        self.assertIn('.description-wrap .inline-edit{position:absolute;right:-36px', self.html)
+
 
 class WebUiTest(unittest.TestCase):
     def setUp(self):

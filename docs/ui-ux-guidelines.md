@@ -49,6 +49,8 @@ This document records the decisions behind the current web UI. Treat it as a bas
 - Put blocking, hierarchy, and Git links in the side rail. These are important supporting facts, not the narrative of the issue.
 - Show a blocking item as a compact issue link with its status marker. Reveal destructive removal affordances on hover/focus and label them clearly for assistive technology.
 - Comments need room for real discussion. Use a multiline composer, make Markdown support visible, and keep send/cancel actions adjacent to the draft.
+- Correcting text is an ordinary, on-demand action. Reveal a quiet edit action on the issue narrative and on comments the person is allowed to edit; replace only the affected content with a Markdown editor, then return to read mode after save or cancel.
+- Issue title and description form one narrative edit session. Comments remain independently editable by their author or an admin, and an edited marker preserves that context without requiring a full revision-history feature.
 
 ## Empty states
 
