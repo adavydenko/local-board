@@ -129,8 +129,10 @@
     .row-empty{height:52px;display:flex;align-items:center;padding:0 58px;color:var(--faint);font-size:12px;background:var(--surface)}
     .zero-state{min-height:360px;display:grid;place-items:center;text-align:center;color:var(--muted)}
     .zero-state strong{display:block;margin-bottom:4px;color:var(--text-soft);font-weight:600}
+    .zero-state-actions{margin-top:12px}
 
     .board-layout{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(255px,1fr);gap:10px;padding:2px 20px 24px;overflow-x:auto;min-height:calc(100vh - 168px);background:var(--canvas);border-top:1px solid var(--line)}
+    .board-layout.can-scroll-right{box-shadow:inset -28px 0 18px -18px rgba(0,0,0,.14)}
     .board-column{min-width:0}
     .column-heading{height:42px;display:flex;align-items:center;gap:8px;padding:0 7px;color:var(--text-soft);font-size:12px;font-weight:600}
     .column-heading .status-count{margin-left:auto}
@@ -306,6 +308,8 @@
     .composer-footer{display:flex;align-items:center;gap:8px;min-height:42px;padding:6px 8px 6px 13px;border-top:1px solid var(--line);background:var(--surface-raised)}
     .composer-hint{color:var(--muted);font-size:11px}
     .composer-actions{display:flex;align-items:center;gap:6px;margin-left:auto}
+    .comment-composer [data-action="cancel-comment"]{display:none}
+    .comment-composer:focus-within [data-action="cancel-comment"],.comment-composer.has-draft [data-action="cancel-comment"]{display:inline-flex}
     .empty-inline{padding:7px 0;color:var(--muted);font-size:12px}
     .issue-sidebar{align-self:start;position:sticky;top:84px;border-left:1px solid var(--line);padding-left:24px}
     .properties-heading{margin:0 0 14px;color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
@@ -331,7 +335,7 @@
         .option-check{margin-left:auto;color:var(--accent);font-size:13px;font-weight:700}
     .property-labels{padding:8px 0 10px}
     .label-picker{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
-    .assigned-label,.label-button{height:22px;display:inline-flex;align-items:center;gap:5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text-soft);font-size:11px}
+    .assigned-label,.label-button{min-height:24px;display:inline-flex;align-items:center;gap:5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text-soft);font-size:11px}
     .assigned-label{background:var(--surface-raised)}
     .assigned-label:hover{border-color:#cbd0f7;background:var(--accent-soft)}
     .label-editor{position:relative;margin-top:7px}
@@ -346,7 +350,7 @@
     .label-quick-create .control{width:100%;height:28px;font-size:12px}
     .label-quick-create input[type="color"]{padding:3px;cursor:pointer}
     .label-quick-create-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:4px}
-    .claim-action{width:100%;margin-top:14px}
+    .claim-action{margin-top:14px}
     .sidebar-section{margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
     .sidebar-section-heading{margin:0 0 10px;color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
     .sidebar-subheading{margin:11px 0 5px;color:var(--muted);font-size:11px;font-weight:600}
@@ -360,11 +364,11 @@
     .side-relation .status-indicator.started:before{inset:1.5px}
     .side-relation .status-indicator.completed:after{left:3px;top:1px;width:3px;height:5px}
     .side-relation .status-indicator.canceled:before,.side-relation .status-indicator.canceled:after{left:1.5px;top:4px;width:6px}
-    .relation-remove{width:20px;height:20px;margin-left:auto;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:16px;line-height:1;opacity:0}
+    .relation-remove{width:24px;height:24px;margin-left:auto;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:16px;line-height:1;opacity:0}
     .side-relation:hover .relation-remove,.relation-remove:focus-visible{opacity:1}
     .relation-remove:hover{background:#ececef;color:var(--text)}
     .sidebar-disclosure{margin-top:9px}
-    .sidebar-disclosure summary{color:var(--muted);font-size:11px;cursor:pointer}
+    .sidebar-disclosure summary{padding:4px 0;color:var(--muted);font-size:11px;cursor:pointer}
     .sidebar-disclosure summary:hover{color:var(--text-soft)}
     .side-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-top:7px}
     .side-form .control{min-width:0;width:100%;height:28px;font-size:12px}
@@ -541,7 +545,7 @@
               <div class="settings-list" id="settingsProject"></div>
             </section>
             <section class="settings-section" aria-labelledby="catalogHeading">
-              <div class="settings-section-heading"><h2 id="catalogHeading">Configuration catalogs</h2><span>Future management screens</span></div>
+              <div class="settings-section-heading"><h2 id="catalogHeading">Configuration catalogs</h2><span>Managed in project.toml</span></div>
               <div class="catalog-list" id="settingsCatalog"></div>
             </section>
           </div>
@@ -703,6 +707,7 @@ function filteredIssues(){
   return (data.issues||[]).filter(issue=>(!query||issue.title.toLowerCase().includes(query)||issue.identifier.toLowerCase().includes(query)||(issue.labels||[]).some(label=>String(label).toLowerCase().includes(query)))&&(!milestone||String(issue.milestone_id)===milestone)&&(!assignee||String(issue.assignee_id)===assignee));
 }
 function hasActiveIssueFilters(){return Boolean(searchInput.value.trim()||milestoneFilter.value||assigneeFilter.value)}
+function clearIssueFilters(){searchInput.value='';milestoneFilter.value='';assigneeFilter.value='';renderIssues()}
 
 function statusIndicator(status,label=''){
   const category=status?.category||'unstarted',accessibility=label?`role="img" aria-label="${esc(label)} status" title="${esc(label)}"`:'aria-hidden="true"';
@@ -729,16 +734,18 @@ function renderIssues(){
   const filters=[];if(searchInput.value.trim())filters.push(`matching “${searchInput.value.trim()}”`);if(milestoneFilter.value)filters.push(milestoneName(+milestoneFilter.value));if(assigneeFilter.value)filters.push((data.actors||[]).find(actor=>String(actor.id)===assigneeFilter.value)?.name);
   filterSummary.textContent=`${issues.length} ${issues.length===1?'issue':'issues'}${filters.length?' · '+filters.filter(Boolean).join(' · '):''}`;
   const noMatches=hasActiveIssueFilters()&&!issues.length;
-  issueList.innerHTML=!statuses.length?'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>':noMatches?'<div class="zero-state"><div><strong>No matching issues</strong>No issues match the active filters.</div></div>':visibleStatuses.map(status=>{
+  issueList.innerHTML=!statuses.length?'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>':noMatches?'<div class="zero-state"><div><strong>No matching issues</strong>No issues match the active filters.<div class="zero-state-actions"><button class="button small" type="button" data-action="clear-filters">Clear filters</button></div></div></div>':visibleStatuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
     const add=canWrite()?`<button class="status-add" type="button" data-new-status="${esc(status.name)}" aria-label="Create issue in ${esc(status.name)}">+</button>`:'';
     return `<section class="status-group" aria-labelledby="status-${status.position}"><div class="status-heading">${statusIndicator(status)}<span class="status-name" id="status-${status.position}">${esc(status.name)}</span><span class="status-count">${items.length}</span>${add}</div>${items.map(issue=>issueRow(issue,status)).join('')||'<div class="row-empty">No issues here yet.</div>'}</section>`;
   }).join('');
-  issueBoard.innerHTML=!statuses.length?'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>':noMatches?'<div class="zero-state"><div><strong>No matching issues</strong>No issues match the active filters.</div></div>':visibleStatuses.map(status=>{
+  issueBoard.innerHTML=!statuses.length?'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>':noMatches?'<div class="zero-state"><div><strong>No matching issues</strong>No issues match the active filters.<div class="zero-state-actions"><button class="button small" type="button" data-action="clear-filters">Clear filters</button></div></div></div>':visibleStatuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
     return `<section class="board-column"><div class="column-heading">${statusIndicator(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span></div>${items.map(issue=>boardCard(issue,status)).join('')||'<div class="row-empty">No issues here yet.</div>'}</section>`;
   }).join('');
+  updateBoardScrollHint();
 }
+function updateBoardScrollHint(){issueBoard.classList.toggle('can-scroll-right',issueBoard.scrollLeft+issueBoard.clientWidth<issueBoard.scrollWidth-1)}
 
 function activityEntityName(item){
   if(item.entity_type==='label')return (data.board?.labels||[]).find(label=>label.id===item.entity_id)?.name;
@@ -992,6 +999,7 @@ function setLayout(layout){
   currentLayout=layout;
   issueList.classList.toggle('hidden',layout!=='list');issueBoard.classList.toggle('hidden',layout!=='board');
   $$('.layout-button').forEach(button=>{const active=button.dataset.layout===layout;button.classList.toggle('active',active);button.setAttribute('aria-pressed',String(active))});
+  updateBoardScrollHint();
 }
 
 async function openDetail(ref,{updateHistory=true,focusContent=true}={}){
@@ -1267,9 +1275,11 @@ function openNewIssue(status=''){
 $$('.nav-item').forEach(button=>button.addEventListener('click',()=>setView(button.dataset.view)));
 $$('.layout-button').forEach(button=>button.addEventListener('click',()=>setLayout(button.dataset.layout)));
 $$('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
-issueList.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
-issueBoard.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref)});
+issueList.addEventListener('click',event=>{if(event.target.closest('[data-action="clear-filters"]'))return clearIssueFilters();const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
+issueBoard.addEventListener('click',event=>{if(event.target.closest('[data-action="clear-filters"]'))return clearIssueFilters();const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref)});
+issueBoard.addEventListener('scroll',updateBoardScrollHint);window.addEventListener('resize',updateBoardScrollHint);
 issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('keydown',handleCommentShortcut);issueView.addEventListener('keydown',handleInlineEditShortcut);issueView.addEventListener('keydown',handlePropertyPickerDismissal);
+issueView.addEventListener('input',event=>{const composer=event.target.closest('.comment-composer');if(composer)composer.classList.toggle('has-draft',Boolean(composer.querySelector('textarea')?.value.trim()))});
 settingsView.addEventListener('click',event=>{if(!handleSettingsTabs(event))handleSettingsAction(event)});settingsView.addEventListener('submit',handleSettingsSubmit);settingsView.addEventListener('keydown',handleSettingsTabKeydown);settingsView.addEventListener('keydown',handleMilestoneEditorDismissal);
 window.addEventListener('popstate',event=>restoreLocation(event.state));
 // 'toggle' does not bubble, so capture at the document level; this survives innerHTML re-renders.
