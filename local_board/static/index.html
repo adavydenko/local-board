@@ -242,9 +242,25 @@
     .properties-heading{margin:0 0 14px;color:var(--muted);font-size:10px;font-weight:650;text-transform:uppercase;letter-spacing:.08em}
     .property{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;min-height:38px;gap:10px;font-size:11.5px}
     .property>span{color:var(--muted)}
-    .property select{width:100%;height:28px;border:0;border-radius:5px;background:transparent;padding:0 5px;outline:none;font-size:11.5px}
-    .property select:hover{background:var(--hover)}
-    .property select:focus{box-shadow:0 0 0 2px var(--accent-soft)}
+    .property strong{font-weight:550;color:var(--text-soft)}
+    .property-picker{position:relative;margin:0}
+    .property-picker summary{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;min-height:38px;gap:10px;list-style:none;cursor:pointer;font-size:11.5px}
+    .property-picker summary::-webkit-details-marker{display:none}
+    .property-picker summary>span:first-child{color:var(--muted)}
+    .property-value{display:flex;align-items:center;gap:6px;min-width:0;min-height:28px;padding:0 5px;border-radius:5px;color:var(--text-soft);font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .property-picker summary:hover .property-value,.property-picker[open] .property-value{background:var(--hover);color:var(--text)}
+    .property-value .mini-avatar{width:18px;height:18px;font-size:7px}
+    .milestone-marker{color:#81838a;font-size:15px;line-height:1}
+    .property-menu{position:absolute;z-index:15;top:calc(100% + 4px);left:0;width:max(260px,100%);padding:6px;border:1px solid var(--line);border-radius:8px;background:var(--surface);box-shadow:0 12px 28px rgba(0,0,0,.12)}
+    .property-menu-heading{padding:5px 7px 7px;color:var(--muted);font-size:10px;font-weight:600}
+    .property-option{display:flex;align-items:center;gap:7px;width:100%;min-height:28px;padding:5px 7px;border:0;border-radius:5px;background:transparent;color:var(--text-soft);font-size:11.5px;text-align:left}
+    .property-option:hover,.property-option.selected{background:var(--hover);color:var(--text)}
+    .property-option .status-indicator{width:13px;height:13px}
+    .property-option .status-indicator.started:before{inset:1.5px}
+    .property-option .status-indicator.completed:after{left:3px;top:1px;width:3px;height:5px}
+    .property-option .status-indicator.canceled:before,.property-option .status-indicator.canceled:after{left:1.5px;top:4px;width:6px}
+    .property-option .mini-avatar{width:19px;height:19px;font-size:7px}
+    .option-check{margin-left:auto;color:var(--accent);font-size:13px;font-weight:700}
     .property-labels{padding:8px 0 10px}
     .label-picker{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
     .assigned-label,.label-button{height:22px;display:inline-flex;align-items:center;gap:5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text-soft);font-size:10px}
@@ -330,7 +346,7 @@
       .status-heading{top:48px;padding:0 12px}.issue-row{min-height:48px;grid-template-columns:18px 55px 16px minmax(0,1fr) 22px;gap:6px;padding:6px 12px}.row-labels,.assignee-cell{display:none}.issue-title{font-size:12.5px}.row-empty{padding-left:44px}
       .board-layout{grid-auto-flow:row;grid-auto-columns:auto;padding:0 10px 20px;min-height:0}.board-column{width:100%}.column-heading{position:sticky;top:48px;z-index:3;background:var(--canvas)}
       .activity-page{padding:18px 15px 50px}.activity-row{grid-template-columns:26px minmax(0,1fr)}.activity-time{grid-column:2}
-      .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-sidebar{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .issue-sidebar{display:block;position:static;border:0;padding:10px 0 0}.mobile-properties .property{grid-template-columns:78px minmax(0,1fr)}
+      .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-sidebar{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .issue-sidebar{display:block;position:static;border:0;padding:10px 0 0}.mobile-properties .property,.mobile-properties .property-picker summary{grid-template-columns:78px minmax(0,1fr)}.mobile-properties .property-menu{position:static;width:auto;margin:3px 0 5px}
       .comment-input{min-height:104px;height:104px}.side-form.git-form{grid-template-columns:1fr auto}.side-form.git-form .control:last-of-type{grid-column:1}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}.dialog-form{max-height:calc(100vh - 20px)}.field-row{grid-template-columns:1fr}.toast{bottom:66px}
       .settings-page{padding:18px 15px 50px}.settings-grid{gap:8px}.managed-note{padding:11px}.config-preview{max-height:420px}
     }
@@ -619,11 +635,11 @@ function renderIssues(){
   issueList.innerHTML=statuses.length?statuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
     const add=canWrite()?`<button class="status-add" type="button" data-new-status="${esc(status.name)}" aria-label="Create issue in ${esc(status.name)}">+</button>`:'';
-    return `<section class="status-group" aria-labelledby="status-${status.position}"><div class="status-heading">${statusIndicator(status)}<span class="status-name" id="status-${status.position}">${esc(status.name)}</span><span class="status-count">${items.length}</span>${add}</div>${items.map(issue=>issueRow(issue,status)).join('')||'<div class="row-empty">No issues</div>'}</section>`;
+    return `<section class="status-group" aria-labelledby="status-${status.position}"><div class="status-heading">${statusIndicator(status)}<span class="status-name" id="status-${status.position}">${esc(status.name)}</span><span class="status-count">${items.length}</span>${add}</div>${items.map(issue=>issueRow(issue,status)).join('')||'<div class="row-empty">No issues here yet.</div>'}</section>`;
   }).join(''):'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>';
   issueBoard.innerHTML=statuses.length?statuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
-    return `<section class="board-column"><div class="column-heading">${statusIndicator(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span></div>${items.map(issue=>boardCard(issue,status)).join('')||'<div class="row-empty">No issues</div>'}</section>`;
+    return `<section class="board-column"><div class="column-heading">${statusIndicator(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span></div>${items.map(issue=>boardCard(issue,status)).join('')||'<div class="row-empty">No issues here yet.</div>'}</section>`;
   }).join(''):'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>';
 }
 
@@ -690,11 +706,41 @@ function actorOptions(selected){return '<option value="">Unassigned</option>'+(d
 function priorityOptions(selected){return ['none','low','medium','high','urgent'].map(priority=>`<option value="${priority}" ${priority===selected?'selected':''}>${humanize(priority==='none'?'no priority':priority)}</option>`).join('')}
 function milestoneOptions(selected){return '<option value="">No milestone</option>'+(data.board?.milestones||[]).map(item=>`<option value="${item.id}" ${selected===item.id?'selected':''}>${esc(item.name)}</option>`).join('')}
 function statusForName(name){return statusesSorted().find(status=>status.name===name)||{category:'unstarted'}}
+function propertyPicker(field,label,value,options){
+  return `<details class="property-picker" data-property-picker="${esc(field)}"><summary data-action="property-trigger"><span>${esc(label)}</span><span class="property-value">${value}</span></summary><div class="property-menu"><div class="property-menu-heading">Change ${esc(label).toLowerCase()}</div>${options}</div></details>`;
+}
+function propertyOption(field,value,content,selected){
+  return `<button class="property-option ${selected?'selected':''}" type="button" data-action="set-property" data-field="${esc(field)}" data-value="${esc(value)}">${content}${selected?'<span class="option-check" aria-label="Selected">✓</span>':''}</button>`;
+}
+function statusPropertyPicker(issue){
+  const current=statusForName(issue.status);
+  const options=statusesSorted().map(status=>propertyOption('status',status.name,`${statusIndicator(status)}<span>${esc(status.name)}</span>`,status.name===issue.status)).join('');
+  return propertyPicker('status','Status',`${statusIndicator(current)}<span>${esc(issue.status)}</span>`,options);
+}
+function priorityPropertyPicker(issue){
+  const options=['none','low','medium','high','urgent'].map(priority=>propertyOption('priority',priority,`${priorityMark(priority)}<span>${esc(humanize(priority==='none'?'no priority':priority))}</span>`,priority===issue.priority)).join('');
+  return propertyPicker('priority','Priority',`${priorityMark(issue.priority)}<span>${esc(humanize(issue.priority==='none'?'no priority':issue.priority))}</span>`,options);
+}
+function assigneePropertyPicker(issue){
+  const noAssignee=propertyOption('assignee_id','',`<span class="mini-avatar">—</span><span>Unassigned</span>`,!issue.assignee_id);
+  const options=noAssignee+(data.actors||[]).map(actor=>propertyOption('assignee_id',actor.id,`<span class="mini-avatar">${esc(initials(actor.name))}</span><span>${esc(actor.name)}</span>`,actor.id===issue.assignee_id)).join('');
+  const value=issue.assignee?`<span class="mini-avatar">${esc(initials(issue.assignee))}</span><span>${esc(issue.assignee)}</span>`:'<span>Unassigned</span>';
+  return propertyPicker('assignee_id','Assignee',value,options);
+}
+function milestonePropertyPicker(issue){
+  const milestones=data.board?.milestones||[];
+  const none=propertyOption('milestone_id','',`<span class="milestone-marker">◇</span><span>No milestone</span>`,!issue.milestone_id);
+  const options=none+milestones.map(item=>propertyOption('milestone_id',item.id,`<span class="milestone-marker">◇</span><span>${esc(item.name)}</span>`,item.id===issue.milestone_id)).join('');
+  const name=milestoneName(issue.milestone_id);
+  const value=name?`<span class="milestone-marker">◇</span><span>${esc(name)}</span>`:'<span>No milestone</span>';
+  return propertyPicker('milestone_id','Milestone',value,options);
+}
 function detailLabels(issue){
   const active=new Set((issue.labels||[]).map(label=>label.id));
-  const selected=(issue.labels||[]).map(label=>`<button class="assigned-label" type="button" data-action="toggle-label" data-label="${label.id}" aria-label="Remove label ${esc(label.name)}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)} <span aria-hidden="true">×</span></button>`).join('')||'<span class="empty-inline">No labels</span>';
   const available=(data.board?.labels||[]).filter(label=>!active.has(label.id));
-  const picker=available.length?`<details class="label-editor"><summary>Add label</summary><div class="label-options">${available.map(label=>`<button class="label-button" type="button" data-action="toggle-label" data-label="${label.id}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</button>`).join('')}</div></details>`:'';
+  const empty=available.length?'No labels yet — add one to make this issue easier to find.':'No labels configured.';
+  const selected=(issue.labels||[]).map(label=>`<button class="assigned-label" type="button" data-action="toggle-label" data-label="${label.id}" aria-label="Remove label ${esc(label.name)}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)} <span aria-hidden="true">×</span></button>`).join('')||`<span class="empty-inline">${empty}</span>`;
+  const picker=available.length?`<details class="label-editor" data-property-picker="labels"><summary data-action="property-trigger">Add label</summary><div class="label-options">${available.map(label=>`<button class="label-button" type="button" data-action="toggle-label" data-label="${label.id}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</button>`).join('')}</div></details>`:'';
   return `<div class="label-picker">${selected}</div>${picker}`;
 }
 function issueLink(issue){return `<button class="issue-link" type="button" data-action="open-issue" data-ref="${esc(issue.identifier)}"><span class="issue-id">${esc(issue.identifier)}</span> ${esc(issue.title)}</button>`}
@@ -714,7 +760,7 @@ function blockingMarkup(issue){
   const blockedBy=(issue.blocked_by||[]).map(item=>sidebarIssueLink(item,{remove:true})).join('');
   const blocks=(issue.blocks||[]).map(item=>sidebarIssueLink(item)).join('');
   const dependencyOptions=(data.issues||[]).filter(item=>item.id!==issue.id&&!((issue.blocked_by||[]).some(blocker=>blocker.id===item.id))).map(item=>`<option value="${item.id}">${esc(item.identifier)} — ${esc(item.title)}</option>`).join('');
-  const empty=!blockedBy&&!blocks?'<div class="empty-inline">No blocking issues.</div>':'';
+  const empty=!blockedBy&&!blocks?'<div class="empty-inline">No blockers — this issue can move forward.</div>':'';
   const add=canWrite()&&dependencyOptions?`<details class="sidebar-disclosure"><summary>Add blocking issue</summary><form class="side-form" data-form="dependency"><select class="control" name="depends_on" required><option value="">Choose an issue…</option>${dependencyOptions}</select><button class="button small" type="submit">Add</button></form></details>`:'';
   return `<section class="sidebar-section"><h2 class="sidebar-section-heading">Blocking</h2>${blockedBy?`<div class="sidebar-subheading">Blocked by</div><div class="side-list">${blockedBy}</div>`:''}${blocks?`<div class="sidebar-subheading">Blocks</div><div class="side-list">${blocks}</div>`:''}${empty}${add}</section>`;
 }
@@ -725,15 +771,15 @@ function gitLinksMarkup(issue){
     return `<div class="git-link"><span class="issue-id">${esc(humanize(link.kind))}</span><span class="issue-id">${esc(link.ref)}</span>${safeUrl?`<a href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${esc(humanize(link.kind))} ${esc(link.ref)}">Open</a>`:''}</div>`;
   }).join('');
   const add=canWrite()?`<details class="sidebar-disclosure"><summary>Add Git link</summary><form class="side-form git-form" data-form="gitlink"><select class="control" name="kind"><option value="commit">Commit</option><option value="pr">Pull request</option><option value="mr">Merge request</option></select><input class="control" name="ref" placeholder="Reference" required><input class="control" name="url" type="url" placeholder="URL (optional)"><button class="button small" type="submit">Add</button></form></details>`:'';
-  return `<section class="sidebar-section"><h2 class="sidebar-section-heading">Git links</h2><div class="side-list">${links||'<div class="empty-inline">No linked Git work.</div>'}</div>${add}</section>`;
+  return `<section class="sidebar-section"><h2 class="sidebar-section-heading">Git links</h2><div class="side-list">${links||'<div class="empty-inline">No linked Git work yet — add a commit or pull request when it exists.</div>'}</div>${add}</section>`;
 }
 
 function readOnlyProperties(issue){
   const labels=(issue.labels||[]).map(label=>`<span class="label-chip"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None</span>';
   return `<h2 class="properties-heading">Properties</h2>
-    <div class="property"><span>Status</span><strong>${esc(issue.status)}</strong></div>
+    <div class="property"><span>Status</span><strong class="property-value">${statusIndicator(statusForName(issue.status))}${esc(issue.status)}</strong></div>
     <div class="property"><span>Assignee</span><strong>${esc(issue.assignee||'Unassigned')}</strong></div>
-    <div class="property"><span>Priority</span><strong>${esc(humanize(issue.priority==='none'?'no priority':issue.priority))}</strong></div>
+    <div class="property"><span>Priority</span><strong class="property-value">${priorityMark(issue.priority)}${esc(humanize(issue.priority==='none'?'no priority':issue.priority))}</strong></div>
     <div class="property"><span>Milestone</span><strong>${esc(milestoneName(issue.milestone_id)||'No milestone')}</strong></div>
     <div class="property-labels"><span class="muted">Labels</span><div class="label-picker">${labels}</div></div>`;
 }
@@ -742,10 +788,10 @@ function propertyMarkup(issue){
   if(!canWrite())return readOnlyProperties(issue);
   const mine=identity&&issue.assignee_id===identity.id;
   return `<h2 class="properties-heading">Properties</h2>
-    <label class="property"><span>Status</span><select data-field="status">${statusOptions(issue.status)}</select></label>
-    <label class="property"><span>Assignee</span><select data-field="assignee_id">${actorOptions(issue.assignee_id)}</select></label>
-    <label class="property"><span>Priority</span><select data-field="priority">${priorityOptions(issue.priority)}</select></label>
-    <label class="property"><span>Milestone</span><select data-field="milestone_id">${milestoneOptions(issue.milestone_id)}</select></label>
+    ${statusPropertyPicker(issue)}
+    ${assigneePropertyPicker(issue)}
+    ${priorityPropertyPicker(issue)}
+    ${milestonePropertyPicker(issue)}
     <div class="property-labels"><span class="muted">Labels</span><div class="label-picker">${detailLabels(issue)}</div></div>
     <button class="button ${mine?'':'primary'} claim-action" type="button" data-action="${mine?'release':'claim'}">${mine?'Release issue':'Claim issue'}</button>`;
 }
@@ -761,7 +807,7 @@ function renderDetail(){
     <h1 class="issue-title-heading" id="issueTitleHeading">${esc(issue.title)}</h1>
     ${markdown(issue.description)}
     <details class="mobile-properties"><summary>Issue details</summary><div class="issue-sidebar">${sidebarContent}</div></details>
-    <section class="detail-section"><div class="section-heading"><h2>Activity</h2><span class="section-count">${issue.comments_total||0} ${(issue.comments_total||0)===1?'comment':'comments'}</span></div><div class="comments">${comments||'<div class="empty-inline">No comments yet.</div>'}</div>${commentForm}</section>`;
+    <section class="detail-section"><div class="section-heading"><h2>Activity</h2><span class="section-count">${issue.comments_total||0} ${(issue.comments_total||0)===1?'comment':'comments'}</span></div><div class="comments">${comments||'<div class="empty-inline">No comments yet — add context, a decision, or a handoff.</div>'}</div>${commentForm}</section>`;
   issueSidebar.innerHTML=sidebarContent;
 }
 
@@ -825,9 +871,25 @@ async function refreshDetail(){
   currentIssue=await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}`);data=await api('/api/dashboard');render();
 }
 
+function dismissPropertyPickers(except=null){
+  $$('details.property-picker[open],details.label-editor[open]').forEach(picker=>{if(picker!==except)picker.open=false});
+}
+function focusPropertyPicker(field){
+  const summary=$$(`details[data-property-picker="${field}"] > summary`).find(item=>item.getClientRects().length);
+  summary?.focus();
+}
+function focusOpenPropertyPicker(picker){
+  const option=picker?.querySelector('.property-option.selected,.property-option,.label-button');
+  option?.focus();
+}
+
 async function handleIssueAction(event){
   const actionTarget=event.target.closest('[data-action]');
-  if(!actionTarget)return;
+  if(!actionTarget){
+    if(!event.target.closest('details.property-picker,details.label-editor'))dismissPropertyPickers();
+    return;
+  }
+  if(!actionTarget.closest('details.property-picker,details.label-editor'))dismissPropertyPickers();
   try{
     const action=actionTarget.dataset.action;
     if(action==='back-to-issues'){
@@ -839,10 +901,23 @@ async function handleIssueAction(event){
     if(action==='cancel-comment'){
       const form=actionTarget.closest('[data-form="comment"]');form?.reset();return;
     }
+    if(action==='property-trigger'){
+      const picker=actionTarget.closest('.property-picker,.label-editor');
+      setTimeout(()=>{if(picker?.open){dismissPropertyPickers(picker);focusOpenPropertyPicker(picker)}});
+      return;
+    }
     if(!canWrite())return;
+    if(action==='set-property'){
+      const field=actionTarget.dataset.field;
+      let value=actionTarget.dataset.value;
+      if(field==='assignee_id'||field==='milestone_id')value=value?+value:null;
+      await patchIssue({[field]:value});requestAnimationFrame(()=>focusPropertyPicker(field));return;
+    }
     if(actionTarget.dataset.action==='claim')return await claimIssue();
     if(actionTarget.dataset.action==='release')return await releaseIssue();
-    if(actionTarget.dataset.action==='toggle-label')return await toggleLabel(+actionTarget.dataset.label);
+    if(actionTarget.dataset.action==='toggle-label'){
+      await toggleLabel(+actionTarget.dataset.label);requestAnimationFrame(()=>focusPropertyPicker('labels'));return;
+    }
     if(actionTarget.dataset.action==='remove-dependency'){
       await api(`/api/issues/${encodeURIComponent(currentIssue.identifier)}/dependencies`,{method:'DELETE',body:JSON.stringify({depends_on:+actionTarget.dataset.depends})});await refreshDetail();notify('Dependency removed');
     }
@@ -864,17 +939,16 @@ async function handleDetailSubmit(event){
   }catch(error){notify(error.message)}
 }
 
-async function handlePropertyChange(event){
-  const field=event.target.closest('[data-field]');if(!field)return;
-  if(!canWrite())return;
-  let value=field.value;if(field.dataset.field==='assignee_id'||field.dataset.field==='milestone_id')value=value?+value:null;
-  try{await patchIssue({[field.dataset.field]:value})}catch{}
-}
-
 function handleCommentShortcut(event){
   if(!(event.metaKey||event.ctrlKey)||event.key!=='Enter'||event.target?.name!=='body'||event.target?.tagName!=='TEXTAREA')return;
   const form=event.target.closest('[data-form="comment"]');if(!form)return;
   event.preventDefault();form.requestSubmit();
+}
+function handlePropertyPickerDismissal(event){
+  if(event.key!=='Escape')return;
+  const picker=$$('details.property-picker[open],details.label-editor[open]').find(item=>item.getClientRects().length);
+  if(!picker)return;
+  event.preventDefault();dismissPropertyPickers();picker.querySelector('summary')?.focus();
 }
 
 function openNewIssue(status=''){
@@ -889,7 +963,7 @@ $$('.layout-button').forEach(button=>button.addEventListener('click',()=>setLayo
 $$('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
 issueList.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
 issueBoard.addEventListener('click',event=>{const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref)});
-issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('change',handlePropertyChange);issueView.addEventListener('keydown',handleCommentShortcut);
+issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('keydown',handleCommentShortcut);issueView.addEventListener('keydown',handlePropertyPickerDismissal);
 window.addEventListener('popstate',event=>restoreLocation(event.state));
 
 loginForm.addEventListener('submit',async event=>{

@@ -179,6 +179,24 @@ class WebUiTest(unittest.TestCase):
         self.assertIn(b'data-action="cancel-comment"', body)
         self.assertIn(b"Markdown supported", body)
 
+    def test_root_serves_on_demand_issue_property_pickers(self):
+        status, body = self.request("GET", "/", token=False, parse_json=False)
+        self.assertEqual(status, 200)
+        self.assertIn(b'class="property-picker"', body)
+        self.assertIn(b'data-action="property-trigger"', body)
+        self.assertIn(b'data-action="set-property"', body)
+        self.assertNotIn(b'<select data-field="status">', body)
+
+    def test_root_serves_dismissible_property_pickers_and_actionable_empty_states(self):
+        status, body = self.request("GET", "/", token=False, parse_json=False)
+        self.assertEqual(status, 200)
+        self.assertIn(b"function dismissPropertyPickers", body)
+        self.assertIn(b"function focusPropertyPicker", body)
+        self.assertIn(b"event.key!=='Escape'", body)
+        self.assertIn("No blockers — this issue can move forward.".encode(), body)
+        self.assertIn(b"No linked Git work yet", body)
+        self.assertIn("No comments yet — add context".encode(), body)
+
     def test_dashboard_shape(self):
         status, dashboard = self.request("GET", "/api/dashboard")
         self.assertEqual(status, 200)
