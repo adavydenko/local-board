@@ -112,6 +112,16 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn("function boardCard(issue,status)", self.html)
         self.assertIn("items.map(issue=>boardCard(issue,status))", self.html)
 
+    def test_issue_detail_keeps_secondary_context_in_a_compact_rail(self):
+        self.assertIn('function settingsStatusFlow(statuses)', self.html)
+        self.assertIn('class="status-flow"', self.html)
+        self.assertIn('class="issue-sidebar"', self.html)
+        self.assertIn('<h2 class="sidebar-section-heading">Blocking</h2>', self.html)
+        self.assertIn('<h2 class="sidebar-section-heading">Git links</h2>', self.html)
+        self.assertIn('class="label-editor"', self.html)
+        self.assertIn('Add label', self.html)
+        self.assertNotIn('id="pageTitle"', self.html)
+
 
 class WebUiTest(unittest.TestCase):
     def setUp(self):

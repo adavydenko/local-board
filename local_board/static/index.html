@@ -185,6 +185,13 @@
     .catalog-status .status-indicator.started:before{inset:1.5px}
     .catalog-status .status-indicator.completed:after{left:3px;top:1px;width:3px;height:5px}
     .catalog-status .status-indicator.canceled:before,.catalog-status .status-indicator.canceled:after{left:1.5px;top:4px;width:6px}
+    .status-flow{display:flex;align-items:center;flex-wrap:wrap;gap:5px;margin-top:7px}
+    .status-flow-node{display:inline-flex;align-items:center;gap:5px;min-height:24px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface-raised);color:var(--text-soft);font-size:10.5px;white-space:nowrap}
+    .status-flow-node .status-indicator{width:12px;height:12px}
+    .status-flow-node .status-indicator.started:before{inset:1.5px}
+    .status-flow-node .status-indicator.completed:after{left:3px;top:1px;width:3px;height:5px}
+    .status-flow-node .status-indicator.canceled:before,.status-flow-node .status-indicator.canceled:after{left:1.5px;top:4px;width:6px}
+    .status-flow-arrow{color:#a2a3a9;font-size:12px;line-height:1}
     .managed-badge{padding:2px 6px;border:1px solid var(--line);border-radius:4px;background:var(--surface-raised);color:var(--muted);font-size:9.5px;white-space:nowrap}
     .config-shell{overflow:hidden;border:1px solid #2f3035;border-radius:8px;background:#25262a;box-shadow:0 8px 24px rgba(25,25,28,.08)}
     .config-toolbar{height:36px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid #38393f;color:#c3c4ca;font:10.5px ui-monospace,SFMono-Regular,Menlo,monospace}
@@ -198,7 +205,7 @@
     .back-button:hover{background:var(--hover);color:var(--text)}
     .back-button svg{width:13px;height:13px}
     .issue-toolbar-id{margin-left:8px;padding-left:12px;border-left:1px solid var(--line);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-    .issue-grid{display:grid;grid-template-columns:minmax(0,760px) 260px;justify-content:center;gap:48px;padding:38px 36px 80px}
+    .issue-grid{display:grid;grid-template-columns:minmax(0,760px) 300px;justify-content:center;gap:48px;padding:38px 36px 80px}
     .issue-document{min-width:0}
     .issue-kicker{display:flex;align-items:center;gap:8px;margin-bottom:11px;color:var(--muted);font-size:11px}
     .issue-kicker .label-chip{height:19px}
@@ -214,13 +221,8 @@
     .section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:13px}
     .section-heading h2{margin:0;font-size:12px;font-weight:650;color:var(--text-soft)}
     .section-count{color:var(--muted);font-size:10.5px}
-    .relation-list{display:grid;gap:5px}
-    .relation-row{display:flex;align-items:center;gap:8px;min-height:30px;padding:4px 6px;border-radius:5px;color:var(--text-soft);font-size:11.5px}
-    .relation-row:hover{background:var(--hover)}
-    .relation-row .button{margin-left:auto}
     .issue-link{border:0;background:transparent;padding:0;color:var(--text);font-weight:550;text-align:left}
     .issue-link:hover{text-decoration:underline}
-    .relation-kind{min-width:66px;color:var(--muted);font-size:10.5px}
     .comments{display:grid;gap:17px}
     .comment{display:grid;grid-template-columns:26px minmax(0,1fr);gap:9px}
     .comment-head{display:flex;align-items:baseline;gap:7px;margin-bottom:4px}
@@ -230,9 +232,7 @@
     .composer{display:flex;gap:8px;margin-top:16px}
     .composer input{flex:1;min-width:0}
     .empty-inline{padding:7px 0;color:var(--muted);font-size:11.5px}
-    .add-row{display:flex;gap:7px;margin-top:11px;flex-wrap:wrap}
-    .add-row .control{min-width:110px;flex:1}
-    .issue-properties{align-self:start;position:sticky;top:84px;border-left:1px solid var(--line);padding-left:24px}
+    .issue-sidebar{align-self:start;position:sticky;top:84px;border-left:1px solid var(--line);padding-left:24px}
     .properties-heading{margin:0 0 14px;color:var(--muted);font-size:10px;font-weight:650;text-transform:uppercase;letter-spacing:.08em}
     .property{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;min-height:38px;gap:10px;font-size:11.5px}
     .property>span{color:var(--muted)}
@@ -241,9 +241,44 @@
     .property select:focus{box-shadow:0 0 0 2px var(--accent-soft)}
     .property-labels{padding:8px 0 10px}
     .label-picker{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}
-    .label-button{height:22px;display:inline-flex;align-items:center;gap:5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--muted);font-size:10px}
-    .label-button.active{border-color:#cbd0f7;background:var(--accent-soft);color:var(--text-soft)}
+    .assigned-label,.label-button{height:22px;display:inline-flex;align-items:center;gap:5px;padding:0 7px;border:1px solid var(--line);border-radius:5px;background:var(--surface);color:var(--text-soft);font-size:10px}
+    .assigned-label{background:var(--surface-raised)}
+    .assigned-label:hover{border-color:#cbd0f7;background:var(--accent-soft)}
+    .label-editor{position:relative;margin-top:7px}
+    .label-editor summary{display:inline-flex;align-items:center;min-height:24px;padding:0 8px;border:1px dashed var(--line-strong);border-radius:5px;color:var(--muted);font-size:10px;cursor:pointer;list-style:none}
+    .label-editor summary::-webkit-details-marker{display:none}
+    .label-editor summary:hover{border-color:#bfc4ec;background:var(--accent-soft);color:var(--text-soft)}
+    .label-options{display:grid;gap:2px;max-height:180px;overflow:auto;margin-top:6px;padding:5px;border:1px solid var(--line);border-radius:6px;background:var(--surface);box-shadow:0 5px 16px rgba(0,0,0,.07)}
+    .label-button{width:100%;justify-content:flex-start;border-color:transparent;background:transparent}
+    .label-button:hover{background:var(--hover)}
     .claim-action{width:100%;margin-top:14px}
+    .sidebar-section{margin-top:20px;padding-top:18px;border-top:1px solid var(--line)}
+    .sidebar-section-heading{margin:0 0 10px;color:var(--muted);font-size:10px;font-weight:650;text-transform:uppercase;letter-spacing:.08em}
+    .sidebar-subheading{margin:11px 0 5px;color:var(--muted);font-size:10px;font-weight:550}
+    .sidebar-subheading:first-of-type{margin-top:0}
+    .side-list{display:grid;gap:3px}
+    .side-relation{display:flex;align-items:center;gap:7px;min-width:0;padding:5px 6px;border-radius:5px}
+    .side-relation:hover{background:var(--hover)}
+    .side-relation .issue-link{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+    .side-relation .issue-id{margin-right:4px;font-size:9.5px}
+    .side-relation .status-indicator{width:12px;height:12px}
+    .side-relation .status-indicator.started:before{inset:1.5px}
+    .side-relation .status-indicator.completed:after{left:3px;top:1px;width:3px;height:5px}
+    .side-relation .status-indicator.canceled:before,.side-relation .status-indicator.canceled:after{left:1.5px;top:4px;width:6px}
+    .relation-remove{width:20px;height:20px;margin-left:auto;padding:0;border:0;border-radius:50%;background:transparent;color:var(--muted);font-size:16px;line-height:1;opacity:0}
+    .side-relation:hover .relation-remove,.relation-remove:focus-visible{opacity:1}
+    .relation-remove:hover{background:#ececef;color:var(--text)}
+    .sidebar-disclosure{margin-top:9px}
+    .sidebar-disclosure summary{color:var(--muted);font-size:10.5px;cursor:pointer}
+    .sidebar-disclosure summary:hover{color:var(--text-soft)}
+    .side-form{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px;margin-top:7px}
+    .side-form .control{min-width:0;width:100%;height:28px;font-size:10.5px}
+    .side-form.git-form{grid-template-columns:1fr 1fr auto}
+    .git-link{display:flex;align-items:center;gap:6px;min-width:0;padding:5px 6px;border-radius:5px;color:var(--text-soft);font-size:10.5px}
+    .git-link:hover{background:var(--hover)}
+    .git-link .issue-id{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .git-link a{margin-left:auto;color:var(--accent);font-weight:550;text-decoration:none}
+    .git-link a:hover{text-decoration:underline}
     .mobile-properties{display:none}
 
     .login{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:20px;background:var(--canvas)}
@@ -277,20 +312,20 @@
 
     @media(max-width:900px){
       :root{--sidebar-width:186px}
-      .issue-grid{grid-template-columns:minmax(0,1fr) 230px;gap:30px;padding-left:28px;padding-right:28px}
+      .issue-grid{grid-template-columns:minmax(0,1fr) 260px;gap:30px;padding-left:28px;padding-right:28px}
       .issue-row{grid-template-columns:18px 62px 16px minmax(160px,1fr) minmax(0,auto) 28px}.assignee-cell{display:none}
       .settings-intro,.settings-grid{grid-template-columns:1fr}.settings-intro{gap:17px}
     }
     @media(max-width:720px){
       .app{display:block;padding-bottom:52px}.sidebar{position:fixed;z-index:30;top:auto;bottom:0;left:0;right:0;width:auto;height:52px;display:block;padding:4px 8px;border:0;border-top:1px solid var(--line);background:rgba(247,247,248,.96);backdrop-filter:blur(14px)}
       .brand,.board-switcher,.nav-label,.identity{display:none}.primary-nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;height:100%;max-width:420px;margin:auto}.nav-item{height:44px;justify-content:center;flex-direction:column;gap:1px;padding:0;font-size:9px}.nav-icon{width:15px;height:15px}.nav-count{display:none}
-      .workspace-header{height:48px;padding:0 12px}.content{min-height:calc(100vh - 100px)}.workspace-title .eyebrow,.refresh-label{display:none}
+      .workspace-header{height:48px;padding:0 12px}.content{min-height:calc(100vh - 100px)}.refresh-label{display:none}
       .issues-header{padding:17px 14px 10px}.issues-heading{margin-bottom:13px}.issues-heading h1{font-size:19px}.issues-heading p{display:none}.toolbar{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:7px}.search-wrap{min-width:0;max-width:none;grid-column:1/3}.toolbar select{width:100%;max-width:none}.layout-toggle{margin-left:0;grid-column:3;grid-row:1}.filter-summary{padding:0 14px 8px}#milestoneFilter{grid-column:1}#assigneeFilter{grid-column:2}
       .status-heading{top:48px;padding:0 12px}.issue-row{min-height:48px;grid-template-columns:18px 55px 16px minmax(0,1fr) 22px;gap:6px;padding:6px 12px}.row-labels,.assignee-cell{display:none}.issue-title{font-size:12.5px}.row-empty{padding-left:44px}
       .board-layout{grid-auto-flow:row;grid-auto-columns:auto;padding:0 10px 20px;min-height:0}.board-column{width:100%}.column-heading{position:sticky;top:48px;z-index:3;background:var(--canvas)}
       .activity-page{padding:18px 15px 50px}.activity-row{grid-template-columns:26px minmax(0,1fr)}.activity-time{grid-column:2}
-      .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-properties{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .property{grid-template-columns:78px minmax(0,1fr)}
-      .composer{align-items:flex-end}.composer input{height:36px}.add-row{display:grid;grid-template-columns:1fr auto}.add-row .control{min-width:0}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}.dialog-form{max-height:calc(100vh - 20px)}.field-row{grid-template-columns:1fr}.toast{bottom:66px}
+      .issue-toolbar{height:38px;padding:0 8px}.issue-grid{display:block;padding:24px 17px 60px}.issue-title-heading{font-size:23px;margin-bottom:18px}.issue-sidebar{display:none}.mobile-properties{display:block;margin:0 0 26px;padding:13px 14px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface-raised)}.mobile-properties summary{cursor:pointer;color:var(--text-soft);font-size:11.5px;font-weight:600}.mobile-properties .issue-sidebar{display:block;position:static;border:0;padding:10px 0 0}.mobile-properties .property{grid-template-columns:78px minmax(0,1fr)}
+      .composer{align-items:flex-end}.composer input{height:36px}.side-form.git-form{grid-template-columns:1fr auto}.side-form.git-form .control:last-of-type{grid-column:1}.dialog{width:calc(100vw - 16px);max-height:calc(100vh - 20px)}.dialog-form{max-height:calc(100vh - 20px)}.field-row{grid-template-columns:1fr}.toast{bottom:66px}
       .settings-page{padding:18px 15px 50px}.settings-grid{gap:8px}.managed-note{padding:11px}.config-preview{max-height:420px}
     }
     @media(prefers-reduced-motion:reduce){*,*:before,*:after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}
@@ -341,7 +376,7 @@
 
   <main class="workspace" id="mainContent" tabindex="-1">
     <header class="workspace-header">
-      <div class="workspace-title"><span class="eyebrow" id="headerBoard">Board</span><span aria-hidden="true">/</span><span id="pageTitle">Issues</span></div>
+      <div class="workspace-title"><span class="eyebrow" id="headerBoard">Board</span></div>
       <div class="workspace-actions">
         <button class="button quiet icon-only" id="refreshBtn" type="button" aria-label="Refresh board" title="Refresh board">
           <svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M13.1 5.2A5.5 5.5 0 1 0 13.2 10M13.1 2.7v2.8h-2.8" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg>
@@ -427,7 +462,7 @@
         </div>
         <div class="issue-grid">
           <article class="issue-document" id="issueDocument"></article>
-          <aside class="issue-properties" id="issueProperties" aria-label="Issue properties"></aside>
+          <aside class="issue-sidebar" id="issueSidebar" aria-label="Issue details"></aside>
         </div>
       </section>
     </div>
@@ -620,6 +655,11 @@ function settingsStatusItems(statuses){
   return statuses.map(status=>`<span class="catalog-status">${statusIndicator(status)}<span>${esc(status.name)}</span></span>`).join('')||'<span class="muted">None configured</span>';
 }
 
+function settingsStatusFlow(statuses){
+  if(!statuses.length)return '<span class="muted">None configured</span>';
+  return statuses.map((status,index)=>`${index?'<span class="status-flow-arrow" aria-hidden="true">→</span>':''}<span class="status-flow-node">${statusIndicator(status)}<span>${esc(status.name)}</span></span>`).join('');
+}
+
 function settingsLabelItems(labels){
   return labels.map(label=>`<span class="label-chip"><span class="label-dot" style="--label-color:${esc(label.color||'#8d8d95')}"></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None configured</span>';
 }
@@ -633,7 +673,7 @@ function renderSettings(){
     <div class="settings-row"><span>Default priority</span><strong>${esc(humanize(board.defaults?.priority||'medium'))}</strong></div>
     <div class="settings-row"><span>Start policy</span><strong>${board.agent_policy?.require_assignee_before_start!==false?'Assignee required':'Unassigned starts allowed'}</strong></div>`;
   settingsCatalog.innerHTML=`
-    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5" stroke="currentColor"/><path d="M5.5 8h5" stroke="currentColor" stroke-linecap="round"/></svg></span><span class="catalog-copy"><strong>Statuses · ${statuses.length}</strong><span class="catalog-items">${settingsStatusItems(statuses)}</span></span><span class="managed-badge">TOML</span></div>
+    <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><circle cx="8" cy="8" r="5" stroke="currentColor"/><path d="M5.5 8h5" stroke="currentColor" stroke-linecap="round"/></svg></span><span class="catalog-copy"><strong>Statuses · ${statuses.length}</strong><span class="status-flow">${settingsStatusFlow(statuses)}</span></span><span class="managed-badge">TOML</span></div>
     <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3 3.5h10v9H3zM5.5 2v3M10.5 2v3M3 6.5h10" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"/></svg></span><span class="catalog-copy"><strong>Milestones · ${milestones.length}</strong><small>${esc(catalogSummary(milestones))}</small></span><span class="managed-badge">TOML</span></div>
     <div class="catalog-row"><span class="catalog-icon"><svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m8.2 2.5 5.3 5.3-5.7 5.7-5.3-5.3V2.5h5.7Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="5.3" cy="5.3" r=".8" fill="currentColor"/></svg></span><span class="catalog-copy"><strong>Labels · ${labels.length}</strong><span class="catalog-items">${settingsLabelItems(labels)}</span></span><span class="managed-badge">TOML</span></div>`;
   configPreview.textContent=projectToml();
@@ -643,11 +683,44 @@ function statusOptions(selected){return statusesSorted().map(status=>`<option va
 function actorOptions(selected){return '<option value="">Unassigned</option>'+(data.actors||[]).map(actor=>`<option value="${actor.id}" ${selected===actor.id?'selected':''}>${esc(actor.name)}</option>`).join('')}
 function priorityOptions(selected){return ['none','low','medium','high','urgent'].map(priority=>`<option value="${priority}" ${priority===selected?'selected':''}>${humanize(priority==='none'?'no priority':priority)}</option>`).join('')}
 function milestoneOptions(selected){return '<option value="">No milestone</option>'+(data.board?.milestones||[]).map(item=>`<option value="${item.id}" ${selected===item.id?'selected':''}>${esc(item.name)}</option>`).join('')}
+function statusForName(name){return statusesSorted().find(status=>status.name===name)||{category:'unstarted'}}
 function detailLabels(issue){
   const active=new Set((issue.labels||[]).map(label=>label.id));
-  return (data.board?.labels||[]).map(label=>`<button class="label-button ${active.has(label.id)?'active':''}" type="button" data-action="toggle-label" data-label="${label.id}" aria-pressed="${active.has(label.id)}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</button>`).join('')||'<span class="empty-inline">No labels configured</span>';
+  const selected=(issue.labels||[]).map(label=>`<button class="assigned-label" type="button" data-action="toggle-label" data-label="${label.id}" aria-label="Remove label ${esc(label.name)}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)} <span aria-hidden="true">×</span></button>`).join('')||'<span class="empty-inline">No labels</span>';
+  const available=(data.board?.labels||[]).filter(label=>!active.has(label.id));
+  const picker=available.length?`<details class="label-editor"><summary>Add label</summary><div class="label-options">${available.map(label=>`<button class="label-button" type="button" data-action="toggle-label" data-label="${label.id}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</button>`).join('')}</div></details>`:'';
+  return `<div class="label-picker">${selected}</div>${picker}`;
 }
 function issueLink(issue){return `<button class="issue-link" type="button" data-action="open-issue" data-ref="${esc(issue.identifier)}"><span class="issue-id">${esc(issue.identifier)}</span> ${esc(issue.title)}</button>`}
+
+function sidebarIssueLink(issue,{remove=false}={}){
+  const removeButton=remove&&canWrite()?`<button class="relation-remove" type="button" data-action="remove-dependency" data-depends="${issue.id}" aria-label="Remove blocking issue ${esc(issue.identifier)}" title="Remove blocking issue">×</button>`:'';
+  return `<div class="side-relation">${statusIndicator(statusForName(issue.status),issue.status)}${issueLink(issue)}${removeButton}</div>`;
+}
+
+function structureMarkup(issue,parent){
+  const children=(issue.children||[]).map(item=>sidebarIssueLink(item)).join('');
+  if(!parent&&!children)return '';
+  return `<section class="sidebar-section"><h2 class="sidebar-section-heading">Structure</h2>${parent?`<div class="sidebar-subheading">Parent</div><div class="side-list">${sidebarIssueLink(parent)}</div>`:''}${children?`<div class="sidebar-subheading">Sub-issues</div><div class="side-list">${children}</div>`:''}</section>`;
+}
+
+function blockingMarkup(issue){
+  const blockedBy=(issue.blocked_by||[]).map(item=>sidebarIssueLink(item,{remove:true})).join('');
+  const blocks=(issue.blocks||[]).map(item=>sidebarIssueLink(item)).join('');
+  const dependencyOptions=(data.issues||[]).filter(item=>item.id!==issue.id&&!((issue.blocked_by||[]).some(blocker=>blocker.id===item.id))).map(item=>`<option value="${item.id}">${esc(item.identifier)} — ${esc(item.title)}</option>`).join('');
+  const empty=!blockedBy&&!blocks?'<div class="empty-inline">No blocking issues.</div>':'';
+  const add=canWrite()&&dependencyOptions?`<details class="sidebar-disclosure"><summary>Add blocking issue</summary><form class="side-form" data-form="dependency"><select class="control" name="depends_on" required><option value="">Choose an issue…</option>${dependencyOptions}</select><button class="button small" type="submit">Add</button></form></details>`:'';
+  return `<section class="sidebar-section"><h2 class="sidebar-section-heading">Blocking</h2>${blockedBy?`<div class="sidebar-subheading">Blocked by</div><div class="side-list">${blockedBy}</div>`:''}${blocks?`<div class="sidebar-subheading">Blocks</div><div class="side-list">${blocks}</div>`:''}${empty}${add}</section>`;
+}
+
+function gitLinksMarkup(issue){
+  const links=(issue.git_links||[]).map(link=>{
+    const safeUrl=safeExternalUrl(link.url);
+    return `<div class="git-link"><span class="issue-id">${esc(humanize(link.kind))}</span><span class="issue-id">${esc(link.ref)}</span>${safeUrl?`<a href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${esc(humanize(link.kind))} ${esc(link.ref)}">Open</a>`:''}</div>`;
+  }).join('');
+  const add=canWrite()?`<details class="sidebar-disclosure"><summary>Add Git link</summary><form class="side-form git-form" data-form="gitlink"><select class="control" name="kind"><option value="commit">Commit</option><option value="pr">Pull request</option><option value="mr">Merge request</option></select><input class="control" name="ref" placeholder="Reference" required><input class="control" name="url" type="url" placeholder="URL (optional)"><button class="button small" type="submit">Add</button></form></details>`:'';
+  return `<section class="sidebar-section"><h2 class="sidebar-section-heading">Git links</h2><div class="side-list">${links||'<div class="empty-inline">No linked Git work.</div>'}</div>${add}</section>`;
+}
 
 function readOnlyProperties(issue){
   const labels=(issue.labels||[]).map(label=>`<span class="label-chip"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None</span>';
@@ -673,37 +746,23 @@ function propertyMarkup(issue){
 
 function renderDetail(){
   const issue=currentIssue,parent=issue.parent_id?findIssueRef(issue.parent_id):null;
-  const children=(issue.children||[]).map(child=>`<div class="relation-row"><span class="relation-kind">Sub-issue</span>${issueLink(child)}</div>`).join('');
-  const blockedBy=(issue.blocked_by||[]).map(item=>`<div class="relation-row"><span class="relation-kind">Blocked by</span>${issueLink(item)}${canWrite()?`<button class="button quiet small" type="button" data-action="remove-dependency" data-depends="${item.id}" aria-label="Remove dependency">Remove</button>`:''}</div>`).join('');
-  const blocks=(issue.blocks||[]).map(item=>`<div class="relation-row"><span class="relation-kind">Blocks</span>${issueLink(item)}</div>`).join('');
-  const parentMarkup=parent?`<div class="relation-row"><span class="relation-kind">Parent</span>${issueLink(parent)}</div>`:'';
-  const dependencyOptions=(data.issues||[]).filter(item=>item.id!==issue.id).map(item=>`<option value="${item.id}">${esc(item.identifier)} — ${esc(item.title)}</option>`).join('');
-  const gitLinks=(issue.git_links||[]).map(link=>{
-    const safeUrl=safeExternalUrl(link.url);
-    return `<div class="relation-row"><span class="relation-kind">${esc(humanize(link.kind))}</span><span class="issue-id">${esc(link.ref)}</span>${safeUrl?`<a href="${esc(safeUrl)}" target="_blank" rel="noopener noreferrer" aria-label="Open ${esc(humanize(link.kind))} ${esc(link.ref)}">Open</a>`:''}</div>`;
-  }).join('');
   const comments=(issue.comments||[]).map(comment=>`<article class="comment"><span class="mini-avatar">${esc(initials(comment.author))}</span><div><div class="comment-head"><strong>${esc(comment.author)}</strong><time datetime="${esc(comment.created_at)}">${esc(relativeTime(comment.created_at))}</time></div><div class="comment-body">${markdown(comment.body)}</div></div></article>`).join('');
-  const relationContent=parentMarkup+children+blockedBy+blocks;
   const propertyContent=propertyMarkup(issue);
-  const dependencyForm=canWrite()?`<form class="add-row" data-form="dependency"><select class="control" name="depends_on" required><option value="">Add blocking issue…</option>${dependencyOptions}</select><button class="button small" type="submit">Add</button></form>`:'';
-  const gitLinkForm=canWrite()?`<form class="add-row" data-form="gitlink"><select class="control" name="kind"><option value="commit">Commit</option><option value="pr">Pull request</option><option value="mr">Merge request</option></select><input class="control" name="ref" placeholder="Reference" required><input class="control" name="url" type="url" placeholder="URL (optional)"><button class="button small" type="submit">Add</button></form>`:'';
+  const sidebarContent=`${propertyContent}${structureMarkup(issue,parent)}${blockingMarkup(issue)}${gitLinksMarkup(issue)}`;
   const commentForm=canWrite()?`<form class="composer" data-form="comment"><input class="control" name="body" placeholder="Leave a comment…" aria-label="Comment" required><button class="button primary" type="submit">Send</button></form>`:'';
   issueToolbarId.textContent=issue.identifier;
   issueDocument.innerHTML=`<div class="issue-kicker">${statusIndicator({category:issue.category})}<span>${esc(issue.status)}</span>${issue.blocked?'<span class="label-chip" style="color:var(--danger)">Blocked</span>':''}</div>
     <h1 class="issue-title-heading" id="issueTitleHeading">${esc(issue.title)}</h1>
     ${markdown(issue.description)}
-    <details class="mobile-properties"><summary>Issue properties</summary><div style="padding-top:10px">${propertyContent}</div></details>
-    <section class="detail-section"><div class="section-heading"><h2>Relations</h2><span class="section-count">${(issue.children||[]).length+(issue.blocked_by||[]).length+(issue.blocks||[]).length+(parent?1:0)}</span></div><div class="relation-list">${relationContent||'<div class="empty-inline">No related issues.</div>'}</div>${dependencyForm}</section>
-    <section class="detail-section"><div class="section-heading"><h2>Git links</h2><span class="section-count">${(issue.git_links||[]).length}</span></div><div class="relation-list">${gitLinks||'<div class="empty-inline">No commits or pull requests linked.</div>'}</div>${gitLinkForm}</section>
+    <details class="mobile-properties"><summary>Issue details</summary><div class="issue-sidebar">${sidebarContent}</div></details>
     <section class="detail-section"><div class="section-heading"><h2>Activity</h2><span class="section-count">${issue.comments_total||0} ${(issue.comments_total||0)===1?'comment':'comments'}</span></div><div class="comments">${comments||'<div class="empty-inline">No comments yet.</div>'}</div>${commentForm}</section>`;
-  issueProperties.innerHTML=propertyContent;
+  issueSidebar.innerHTML=sidebarContent;
 }
 
 function setView(view,{updateHistory=true,focusContent=true}={}){
   currentView=view;
   $$('.nav-item').forEach(button=>{const active=button.dataset.view===view||(view==='issue'&&button.dataset.view==='issues');button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false')});
   issuesView.classList.toggle('hidden',view!=='issues');activityView.classList.toggle('hidden',view!=='activity');settingsView.classList.toggle('hidden',view!=='settings');issueView.classList.toggle('hidden',view!=='issue');
-  pageTitle.textContent={issues:'Issues',activity:'Activity',settings:'Settings',issue:currentIssue?.identifier||'Issue'}[view];
   newIssueBtn.classList.toggle('hidden',!canWrite()||view!=='issues');
   if(updateHistory&&view!=='issue')history.pushState({view},'',location.pathname);
   if(focusContent)mainContent.focus({preventScroll:true});window.scrollTo({top:0,behavior:'instant'});
