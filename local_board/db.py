@@ -470,7 +470,7 @@ class Board:
                 for row in db.execute("SELECT name,category,position FROM statuses ORDER BY position,id")
             ]
             result["labels"] = [
-                dict(row) for row in db.execute("SELECT id,key,name,color FROM labels ORDER BY name")
+                dict(row) for row in db.execute("SELECT id,key,name,color,managed_by FROM labels ORDER BY name")
             ]
             result["milestones"] = [
                 dict(row)

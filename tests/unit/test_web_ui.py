@@ -119,6 +119,19 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn('id="settingsMilestonesPanel"', self.html)
         self.assertIn('function setSettingsTab(tab)', self.html)
 
+    def test_settings_gives_labels_a_dedicated_management_tab_and_issue_side_creation(self):
+        self.assertIn('data-settings-tab="labels"', self.html)
+        self.assertIn('id="settingsLabelsPanel"', self.html)
+        self.assertIn('id="settingsLabels"', self.html)
+        self.assertIn('data-form="create-label"', self.html)
+        self.assertIn('data-action="start-create-issue-label"', self.html)
+        self.assertIn("api('/api/labels',{method:'POST'", self.html)
+
+    def test_issue_label_creation_stays_in_an_anchored_visible_picker(self):
+        self.assertIn('.label-options{position:absolute;', self.html)
+        self.assertIn("$$('details[data-property-picker=\"labels\"]').find(item=>item.getClientRects().length)", self.html)
+        self.assertIn("picker.querySelector('input[name=\"name\"]')?.focus()", self.html)
+
     def test_status_indicators_follow_categories_across_issue_views(self):
         for category in ("backlog", "unstarted", "started", "completed", "canceled"):
             self.assertIn(f".status-indicator.{category}", self.html)
@@ -314,6 +327,13 @@ class WebUiTest(unittest.TestCase):
         status, dashboard = self.request("GET", "/api/dashboard")
         self.assertEqual(status, 200)
         listed = next(item for item in dashboard["board"]["milestones"] if item["id"] == milestone["id"])
+        self.assertEqual(listed["managed_by"], "manual")
+
+    def test_dashboard_exposes_each_labels_management_source(self):
+        _, label = self.request("POST", "/api/labels", body={"name": "Board label"})
+        status, dashboard = self.request("GET", "/api/dashboard")
+        self.assertEqual(status, 200)
+        listed = next(item for item in dashboard["board"]["labels"] if item["id"] == label["id"])
         self.assertEqual(listed["managed_by"], "manual")
 
     def test_create_label_then_duplicate_name_conflicts(self):

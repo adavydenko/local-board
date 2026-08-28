@@ -68,6 +68,9 @@ An empty state should state the current condition and, when the person can act, 
 - Settings should distinguish overview from editing. The overview mirrors `project.toml` and clearly marks it as managed configuration.
 - Give an operational Settings area its own peer tab when it needs regular attention. Do not bury an ongoing management surface below a long configuration preview.
 - Display all configured labels with their colors and all configured statuses in flow order. Never truncate a catalog in a way that makes it look complete.
+- Labels have a dedicated Settings surface for the complete catalog. Configuration-managed labels remain read-only and point to `project.toml`; board-managed labels can be created or edited there.
+- The issue label picker may create one new board-managed label and attach it immediately. This is an escape hatch for an active triage decision, not a second label catalog.
+- Use a deliberate type scale in Settings: 22px for the page title, 15px for section headings and primary row names, 14px for explanatory copy, and 13px only for dense metadata. Do not introduce near-adjacent sizes unless they express a distinct semantic level.
 - Milestone management belongs under Settings once persistence is real. Keep it a compact list: name first, then a completed-issue progress summary and an optional target date.
 - A milestone list must distinguish configuration-managed entries from board-managed entries. Configuration-managed milestones are read-only in the UI and point back to `project.toml`; board-managed entries may be created or edited on demand.
 - Use completed issues for milestone progress. Show both the percentage and the underlying count (for example, `50% · 3 of 6`) so the indicator remains interpretable on small milestones.
