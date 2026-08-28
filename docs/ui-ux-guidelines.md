@@ -21,6 +21,16 @@ This document records the decisions behind the current web UI. Treat it as a bas
 4. **Show real state with familiar signals.** Status icons distinguish unstarted, active, completed, and canceled work at a glance. Group headings use the same semantics as their issues, including progress where it is meaningful.
 5. **Use quiet, purposeful density.** A Linear-like rhythm means restrained surfaces, strong text hierarchy, and compact controls—not copying every Linear feature.
 
+## Typography scale
+
+The app uses one global type scale; new styles must pick from it rather than introduce near-adjacent sizes:
+
+- Sizes: `10px` (uppercase micro-headings only), `11px` (metadata, timestamps, counters), `12px` (secondary UI text, buttons, hints, form labels), `13px` (base — body, rows, controls, property values), `15px` (in-content headings), `20px` (page titles), `22px` (workspace-level titles). The issue detail title is the single larger exception (`28px`).
+- Weights: `400 / 500 / 600 / 700` only. Fractional or intermediate weights (550, 650) render identically to a neighbor on most system fonts and are banned.
+- Monospace (identifiers, code, config preview): one family stack and one size, `12px`.
+- Decorative glyphs sit outside the scale: avatar initials are sized to their circles, and icon-only symbols (`×`, `+`) use `16px`.
+- Settings keeps its documented larger scale (see below); `14px` is legal only there.
+
 ## Issue properties and pickers
 
 - Show status, priority, assignee, milestone, and labels in a read-oriented properties rail.
