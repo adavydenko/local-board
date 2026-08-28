@@ -63,3 +63,34 @@ jobs:
 
       - name: Compile Python sources
         run: python -m compileall -q local_board tests
+
+  web-ui:
+    name: Web UI (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Node and Playwright are CI-only dev tools, mirroring coverage and the
+      # mcp SDK above; the package itself stays dependency-free. The suite
+      # boots tests/e2e_ui/serve_fixture.py (a seeded in-process server) via
+      # Playwright's webServer and drives the real browser UI against it.
+      - name: Install Playwright suite
+        working-directory: tests/e2e_ui
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+
+      - name: Run web UI tests
+        working-directory: tests/e2e_ui
+        run: npx playwright test

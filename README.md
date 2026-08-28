@@ -215,7 +215,7 @@ Stop `local-board serve` before restoring so no process retains a connection to 
 - **No stdio MCP transport yet.** Only Streamable HTTP is implemented; agents that only speak stdio MCP need a bridge.
 - **No data export yet.** Migrating off Local Board today means reading SQLite or the REST API directly; there is no built-in export command.
 - **A single local trust domain.** Every actor token can read and write the whole board once issued; Local Board has no per-issue or per-label access control, and the server assumes it's running on a machine and network you already trust.
-- **The web UI has no automated tests.** The Python surface is covered by the test suite (measured in CI); the single-file browser UI is exercised manually.
+- **Web UI test coverage is thin.** The Python surface is covered by the measured test suite; the browser UI has a small Playwright regression suite (`tests/e2e_ui/`) around picker geometry, focus return, and filters, but most flows are still exercised manually.
 
 ## Development
 
@@ -226,4 +226,10 @@ python -m unittest discover -s tests/unit -v
 python -m unittest discover -s tests/integration -v
 python -m unittest discover -s tests/e2e -v
 python -m compileall -q local_board tests
+```
+
+The browser UI has its own Playwright suite in `tests/e2e_ui/` (Node is a CI-only dev tool, like `coverage` and the `mcp` SDK — the package itself stays dependency-free):
+
+```bash
+cd tests/e2e_ui && npm ci && npx playwright install chromium && npx playwright test
 ```

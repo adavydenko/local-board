@@ -1,0 +1,11 @@
+{
+  "name": "local-board-e2e-ui",
+  "private": true,
+  "description": "CI-only Playwright suite for the Local Board web UI; the runtime package stays dependency-free.",
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
+  },
+  "scripts": {
+    "test": "playwright test"
+  }
+}
