@@ -1,18 +1,59 @@
+"""HTTP transport: a small REST surface plus the JSON-RPC /mcp endpoint."""
+
 from __future__ import annotations
 
+import faulthandler
+
 import json
+import os
+import sys
+import traceback
+from datetime import UTC, datetime
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse, urlsplit
 
-from .db import AuthorizationError, Board, ConflictError
-from .mcp import handle
+from . import __version__, ui
+from .db import Board
+from .errors import describe
+
+# Imported lazily inside _handle_mcp: keeps the REST surface fully functional
+# even while local_board.mcp is mid-rewrite or otherwise broken.
 
 
-def make_handler(board: Board):
+MAX_BODY_BYTES = 1_000_000
+
+# The DNS-rebinding guard: a malicious page can point its own domain at
+# 127.0.0.1 and reach a loopback server from the victim's browser, carrying
+# Host (and on cross-site requests Origin) of the attacker's domain. Every
+# request must therefore present a local Host, and an Origin — when a browser
+# sends one — must be local too. Non-browser clients (MCP SDKs, curl) send no
+# Origin and pass untouched. The MCP spec requires this check for local servers.
+LOCAL_HOSTNAMES = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def _hostname(value: str | None) -> str | None:
+    """Hostname part of a Host header value ('127.0.0.1:8765', '[::1]:8765')."""
+    if not value:
+        return None
+    value = value.strip()
+    if value.startswith("["):
+        return value[1 : value.find("]")].lower() if "]" in value else None
+    return value.rsplit(":", 1)[0].lower() if ":" in value else value.lower()
+
+
+class _TooLarge(Exception):
+    """Raised internally when a request body exceeds MAX_BODY_BYTES."""
+
+
+def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
+    allowed = LOCAL_HOSTNAMES | (allowed_hosts or frozenset())
     class Handler(BaseHTTPRequestHandler):
         server_version = "LocalBoard/0.1"
+        protocol_version = "HTTP/1.1"
+
+        # -- response helpers ------------------------------------------------------
 
         def _json(self, status: int, data: object) -> None:
             body = json.dumps(data, ensure_ascii=False, default=str).encode()
@@ -23,128 +64,312 @@ def make_handler(board: Board):
             self.wfile.write(body)
 
         def _empty(self, status: int) -> None:
-            self.send_response(status); self.send_header("Content-Length", "0"); self.end_headers()
+            self.send_response(status)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _error(self, exc: Exception) -> None:
+            status, code, message, retryable = describe(exc)
+            if code == "internal":
+                traceback.print_exc(file=sys.stderr)
+            self._json(status, {"error": {"code": code, "message": message, "retryable": retryable}})
+
+        def _too_large_response(self) -> None:
+            self.close_connection = True
+            self._json(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, {
+                "error": {
+                    "code": "invalid_request",
+                    "message": f"request body exceeds {MAX_BODY_BYTES} bytes",
+                    "retryable": False,
+                },
+            })
+
+        # -- request helpers ---------------------------------------------------------
+
+        def _local_request(self) -> bool:
+            """Reject DNS-rebinding shapes: non-local Host, or a non-local Origin."""
+            host = _hostname(self.headers.get("Host"))
+            origin_header = self.headers.get("Origin")
+            origin = urlsplit(origin_header).hostname if origin_header else None
+            if host in allowed and (origin_header is None or origin in allowed):
+                return True
+            self.close_connection = True
+            self._json(HTTPStatus.FORBIDDEN, {
+                "error": {
+                    "code": "forbidden",
+                    "message": "request must originate from this machine (Host/Origin check failed)",
+                    "retryable": False,
+                },
+            })
+            return False
 
         def _actor(self):
             header = self.headers.get("Authorization", "")
             return board.authenticate(header[7:]) if header.startswith("Bearer ") else None
 
+        def _require_actor(self):
+            actor = self._actor()
+            if not actor:
+                self._json(HTTPStatus.UNAUTHORIZED, {
+                    "error": {"code": "unauthorized", "message": "Bearer token required", "retryable": False},
+                })
+            return actor
+
+        def _content_length(self) -> int:
+            try:
+                return int(self.headers.get("Content-Length", "0") or "0")
+            except ValueError:
+                return 0
+
         def _body(self):
-            return json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
+            length = self._content_length()
+            if length > MAX_BODY_BYTES:
+                raise _TooLarge()
+            raw = self.rfile.read(length) if length else b""
+            return json.loads(raw) if raw else {}
 
         def _route(self):
             parsed = urlparse(self.path)
-            return [unquote(part) for part in parsed.path.strip("/").split("/") if part], parse_qs(parsed.query)
+            parts = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
+            return parts, parse_qs(parsed.query)
 
-        def _error(self, exc: Exception) -> None:
-            if isinstance(exc, ConflictError): status, code = HTTPStatus.CONFLICT, "conflict"
-            elif isinstance(exc, AuthorizationError): status, code = HTTPStatus.FORBIDDEN, "forbidden"
-            elif isinstance(exc, KeyError): status, code = HTTPStatus.NOT_FOUND, "not_found"
-            elif isinstance(exc, (ValueError, TypeError, json.JSONDecodeError)): status, code = HTTPStatus.BAD_REQUEST, "invalid_request"
-            else: raise exc
-            self._json(status, {"error": {"code": code, "message": str(exc).strip("'")}})
-
-        def _require_actor(self):
-            actor = self._actor()
-            if not actor: self._json(HTTPStatus.UNAUTHORIZED, {"error": {"code": "unauthorized", "message": "Bearer token required"}})
-            return actor
+        # -- GET ----------------------------------------------------------------------
 
         def do_GET(self):
+            if not self._local_request():
+                return
             parts, query = self._route()
+            if parts == ["health"]:
+                try:
+                    board.get_board()
+                    configured = True
+                except KeyError:
+                    configured = False
+                self._json(200, {"status": "ok", "version": __version__, "board_configured": configured})
+                return
             if not parts:
                 body = files("local_board").joinpath("static/index.html").read_bytes()
-                self.send_response(200); self.send_header("Content-Type", "text/html; charset=utf-8"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body); return
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            if parts == ["mcp"]:
+                self.send_response(405)
+                self.send_header("Allow", "POST")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             actor = self._require_actor()
-            if not actor: return
+            if actor is None:
+                return
             try:
-                if parts == ["api", "me"]: return self._json(200, board.get_actor(actor["id"]))
-                if parts == ["api", "actors"]: return self._json(200, board.list_actors())
-                if parts == ["api", "dashboard"]:
-                    projects = board.list_projects()
-                    project_ref = query.get("project", [projects[0]["key"] if projects else None])[0]
-                    context = board.project_context(project_ref) if project_ref else None
-                    project_id = context["id"] if context else None
-                    return self._json(200, {"me": board.get_actor(actor["id"]), "projects": projects, "project": context, "issues": board.list_issues(project_id=project_id), "actors": board.list_actors(), "activity": board.activity(limit=50)})
-                if len(parts) == 3 and parts[:2] == ["api", "projects"]: return self._json(200, board.project_context(parts[2]))
-                if len(parts) == 3 and parts[:2] == ["api", "issues"]: return self._json(200, board.get_issue_context(parts[2]))
-                if parts == ["mcp"]:
-                    self.send_response(405); self.send_header("Allow", "POST"); self.send_header("Content-Length", "0"); self.end_headers(); return
-                return self._json(404, {"error": {"code": "not_found", "message": "route not found"}})
-            except Exception as exc: return self._error(exc)
+                result = self._dispatch_get(actor, parts, query)
+                self._json(200, result)
+            except Exception as exc:
+                self._error(exc)
+
+        def _dispatch_get(self, actor, parts, query):
+            if parts == ["api", "me"]:
+                return board.get_actor(actor["id"])
+            if parts == ["api", "board"]:
+                return board.board_context()
+            if parts == ["api", "dashboard"]:
+                return board.dashboard()
+            if len(parts) == 3 and parts[:2] == ["api", "issues"]:
+                return board.get_issue(board.resolve_issue(parts[2]))
+            if parts == ["api", "activity"]:
+                limit = query.get("limit", [None])[0]
+                return board.activity(limit=int(limit)) if limit is not None else board.activity()
+            raise KeyError("route not found")
+
+        # -- POST ---------------------------------------------------------------------
 
         def do_POST(self):
+            if not self._local_request():
+                return
             actor = self._require_actor()
-            if not actor: return
+            if actor is None:
+                return
             try:
-                data = self._body(); parts, _ = self._route()
+                data = self._body()
+            except _TooLarge:
+                self._too_large_response()
+                return
+            try:
+                parts, _ = self._route()
                 if parts == ["mcp"]:
-                    content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip(); accept = self.headers.get("Accept", "")
-                    if content_type != "application/json": return self._json(415, {"error": "MCP requires Content-Type: application/json"})
-                    if "application/json" not in accept or "text/event-stream" not in accept: return self._json(406, {"error": "MCP requires Accept: application/json, text/event-stream"})
-                    if isinstance(data, list):
-                        responses = [response for item in data if (response := handle(board, actor["id"], item)) is not None]
-                        return self._empty(202) if not responses else self._json(200, responses)
-                    response = handle(board, actor["id"], data)
-                    return self._empty(202) if response is None else self._json(200, response)
+                    self._handle_mcp(actor, data)
+                    return
                 board.require_role(actor["id"], "admin", "member")
-                if parts == ["api", "projects"]: result = board.create_project(actor["id"], **data)
-                elif parts == ["api", "releases"]:
-                    if "project" in data: data["project_id"] = board.resolve_project(data.pop("project"))
-                    result = board.create_release(actor["id"], **data)
-                elif len(parts) == 4 and parts[:2] == ["api", "releases"] and parts[3] == "transition":
-                    result = board.transition_release(actor["id"], int(parts[2]), **data)
-                elif parts == ["api", "issues"]:
-                    if "project" in data: data["project_id"] = board.resolve_project(data.pop("project"))
-                    result = board.create_issue(actor["id"], **data)
-                elif len(parts) == 4 and parts[:2] == ["api", "issues"]:
-                    issue_id = board.resolve_issue(parts[2]); action = parts[3]
-                    if action == "transition": result = board.transition_issue(actor["id"], issue_id, **data)
-                    elif action == "claim": result = board.claim_issue(actor["id"], issue_id, **data)
-                    elif action == "release": result = board.release_issue(actor["id"], issue_id, **data)
-                    elif action == "comments": result = board.add_related(actor["id"], issue_id, "comment", **data)
-                    elif action == "checklist": result = board.add_related(actor["id"], issue_id, "checklist", **data)
-                    elif action == "git-links": result = board.add_related(actor["id"], issue_id, "git_link", **data)
-                    elif action == "dependencies": data["depends_on_id"] = board.resolve_issue(data.pop("depends_on")); result = board.add_related(actor["id"], issue_id, "dependency", **data)
-                    elif action == "labels": result = board.add_label(actor["id"], issue_id, int(data["label_id"]))
-                    else: raise KeyError("route not found")
-                else: raise KeyError("route not found")
-                return self._json(HTTPStatus.CREATED, result)
-            except Exception as exc: return self._error(exc)
+                result = self._dispatch_post(actor, parts, data)
+                self._json(HTTPStatus.CREATED, result)
+            except Exception as exc:
+                self._error(exc)
+
+        def _handle_mcp(self, actor, data):
+            from .mcp import handle
+
+            content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip()
+            accept = self.headers.get("Accept", "")
+            if content_type != "application/json":
+                self._json(415, {"error": {
+                    "code": "invalid_request",
+                    "message": "MCP requires Content-Type: application/json",
+                    "retryable": False,
+                }})
+                return
+            if "application/json" not in accept or "text/event-stream" not in accept:
+                self._json(406, {"error": {
+                    "code": "invalid_request",
+                    "message": "MCP requires Accept: application/json, text/event-stream",
+                    "retryable": False,
+                }})
+                return
+            if isinstance(data, list):
+                actor_id = actor["id"]
+                responses = [item for entry in data if (item := handle(board, actor_id, entry)) is not None]
+                self._empty(202) if not responses else self._json(200, responses)
+                return
+            response = handle(board, actor["id"], data)
+            self._empty(202) if response is None else self._json(200, response)
+
+        def _dispatch_post(self, actor, parts, data):
+            if parts == ["api", "issues"]:
+                return board.create_issue(actor["id"], **data)
+            if len(parts) == 4 and parts[:2] == ["api", "issues"]:
+                issue_id = board.resolve_issue(parts[2])
+                action = parts[3]
+                if action == "claim":
+                    return board.claim_issue(actor["id"], issue_id, **data)
+                if action == "release":
+                    return board.release_issue(actor["id"], issue_id, **data)
+                if action == "comments":
+                    return board.add_comment(actor["id"], issue_id, **data)
+                if action == "dependencies":
+                    depends_on_id = board.resolve_issue(data["depends_on"])
+                    return board.add_dependency(actor["id"], issue_id, depends_on_id)
+                if action == "git-links":
+                    return board.add_git_link(actor["id"], issue_id, **data)
+                raise KeyError("route not found")
+            if parts == ["api", "milestones"]:
+                return board.create_milestone(actor["id"], **data)
+            if parts == ["api", "labels"]:
+                return board.create_label(actor["id"], **data)
+            raise KeyError("route not found")
+
+        # -- PATCH ----------------------------------------------------------------------
 
         def do_PATCH(self):
+            if not self._local_request():
+                return
             actor = self._require_actor()
-            if not actor: return
+            if actor is None:
+                return
+            try:
+                data = self._body()
+            except _TooLarge:
+                self._too_large_response()
+                return
             try:
                 board.require_role(actor["id"], "admin", "member")
-                data = self._body(); parts, _ = self._route()
-                if len(parts) == 3 and parts[:2] == ["api", "issues"]: result = board.update_issue(actor["id"], board.resolve_issue(parts[2]), **data)
-                elif len(parts) == 3 and parts[:2] == ["api", "comments"]: result = board.update_comment(actor["id"], int(parts[2]), **data)
-                elif len(parts) == 3 and parts[:2] == ["api", "checklist"]: result = board.update_checklist_item(actor["id"], int(parts[2]), **data)
-                else: raise KeyError("route not found")
-                return self._json(200, result)
-            except Exception as exc: return self._error(exc)
+                parts, _ = self._route()
+                result = self._dispatch_patch(actor, parts, data)
+                self._json(200, result)
+            except Exception as exc:
+                self._error(exc)
+
+        def _dispatch_patch(self, actor, parts, data):
+            if len(parts) != 3:
+                raise KeyError("route not found")
+            entity, identifier = parts[1], parts[2]
+            if entity == "issues":
+                return board.update_issue(actor["id"], board.resolve_issue(identifier), **data)
+            if entity == "comments":
+                return board.update_comment(actor["id"], int(identifier), **data)
+            if entity == "labels":
+                return board.update_label(actor["id"], int(identifier), **data)
+            if entity == "milestones":
+                return board.update_milestone(actor["id"], int(identifier), **data)
+            if entity == "git-links":
+                return board.update_git_link(actor["id"], int(identifier), **data)
+            raise KeyError("route not found")
+
+        # -- DELETE -----------------------------------------------------------------
 
         def do_DELETE(self):
+            if not self._local_request():
+                return
             actor = self._require_actor()
-            if not actor: return
+            if actor is None:
+                return
+            try:
+                data = self._body()
+            except _TooLarge:
+                self._too_large_response()
+                return
             try:
                 board.require_role(actor["id"], "admin", "member")
-                data = self._body(); parts, _ = self._route()
-                if len(parts) == 3 and parts[:2] == ["api", "comments"]: result = board.delete_comment(actor["id"], int(parts[2]))
-                elif len(parts) == 3 and parts[:2] == ["api", "checklist"]: result = board.delete_checklist_item(actor["id"], int(parts[2]))
-                elif len(parts) == 3 and parts[:2] == ["api", "attachments"]: result = board.delete_attachment(actor["id"], int(parts[2]))
-                elif len(parts) == 3 and parts[:2] == ["api", "git-links"]: result = board.delete_git_link(actor["id"], int(parts[2]))
-                elif len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "labels": result = board.remove_label(actor["id"], board.resolve_issue(parts[2]), int(data["label_id"]))
-                elif len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "dependencies": result = board.remove_dependency(actor["id"], board.resolve_issue(parts[2]), board.resolve_issue(data["depends_on"]), data.get("relation", "blocks"))
-                else: raise KeyError("route not found")
-                return self._json(200, result)
-            except Exception as exc: return self._error(exc)
+                parts, _ = self._route()
+                result = self._dispatch_delete(actor, parts, data)
+                self._json(200, result)
+            except Exception as exc:
+                self._error(exc)
+
+        def _dispatch_delete(self, actor, parts, data):
+            if len(parts) == 3:
+                entity, identifier = parts[1], parts[2]
+                if entity == "comments":
+                    return board.delete_comment(actor["id"], int(identifier))
+                if entity == "labels":
+                    return board.delete_label(actor["id"], int(identifier))
+                if entity == "milestones":
+                    return board.delete_milestone(actor["id"], int(identifier))
+                if entity == "git-links":
+                    return board.delete_git_link(actor["id"], int(identifier))
+            if len(parts) == 4 and parts[:2] == ["api", "issues"] and parts[3] == "dependencies":
+                issue_id = board.resolve_issue(parts[2])
+                depends_on_id = board.resolve_issue(data["depends_on"])
+                return board.remove_dependency(actor["id"], issue_id, depends_on_id)
+            raise KeyError("route not found")
 
         def log_message(self, fmt, *args):
             print(f"[local-board] {fmt % args}")
+
     return Handler
 
 
 def serve(board: Board, host: str = "127.0.0.1", port: int = 8765) -> None:
-    print(f"Local Board: http://{host}:{port}")
-    ThreadingHTTPServer((host, port), make_handler(board)).serve_forever()
+    server = ThreadingHTTPServer((host, port), make_handler(board, allowed_hosts=frozenset({host.lower()})))
+    actual_port = server.server_port
+    board.path.parent.mkdir(parents=True, exist_ok=True)
+    # Fatal signals (segfault, unraisable deadlock dumps) land here, so an unclean
+    # death leaves a diagnosable trace instead of a silent Connection refused.
+    crash_log = (board.path.parent / "server-crash.log").open("a")
+    faulthandler.enable(file=crash_log)
+    discovery_path = board.path.parent / "server.json"
+    discovery = {
+        "url": f"http://{host}:{actual_port}",
+        "pid": os.getpid(),
+        "started_at": datetime.now(UTC).isoformat(),
+    }
+    discovery_path.write_text(json.dumps(discovery), encoding="utf-8")
+    # The banner goes to stderr so `local-board serve > log` keeps stdout clean.
+    base = f"http://{host}:{actual_port}"
+    ui.heading(f"Local Board {__version__}", stream=sys.stderr)
+    print(file=sys.stderr)
+    ui.fields(
+        [("Web UI", base), ("MCP", f"{base}/mcp"), ("Database", str(board.path)),
+         ("PID", str(os.getpid()))],
+        stream=sys.stderr,
+    )
+    print(file=sys.stderr)
+    print(ui.theme.dim("Press Ctrl+C to stop"), file=sys.stderr)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print(ui.theme.dim("\nLocal Board stopped"), file=sys.stderr)
+    finally:
+        discovery_path.unlink(missing_ok=True)
+        crash_log.close()

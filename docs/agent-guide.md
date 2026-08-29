@@ -14,6 +14,10 @@ Each agent must receive its own token through the process environment or another
 
 The conceptual client configuration in `examples/mcp-http.example.json` illustrates the required URL and header; adapt field names to the MCP client in use.
 
+### CLI wrappers
+
+Most MCP clients speak the protocol natively and need none of this. Some agent runtimes, however, drive MCP through generic shell tools (a `curl` wrapper or similar) — if yours does, pass JSON bodies via a temp file (`--args "$(cat args.json)"` or equivalent) rather than inline: Markdown comments with backticks and quotes do not survive shell quoting inline. `GET /health` is an unauthenticated liveness probe. `.local-board/state/server.json` is the running server's address/PID discovery file. A stale `server.json` — file present, PID dead — means the server died uncleanly; check `.local-board/state/server-crash.log`.
+
 ## Coordinator bootstrap
 
 An agent orchestrator with shell access can initialize the repository and capture its first admin identity without parsing human-oriented output:
@@ -26,20 +30,38 @@ local-board serve
 
 The JSON response contains the one-time plaintext token. Capture it directly into the orchestrator's secret store; do not echo it, place it in a prompt, add it to an issue, or commit it. Once connected as admin, call `create_actor` for each subagent with the minimum role (`member` for implementation, `viewer` for audit). Deliver each returned token through the execution environment or the orchestrator's secret channel. Call `rotate_actor_token` when a token may have leaked or when reassigning an identity; the previous token stops authenticating immediately.
 
-Subagents do not need the administrative tool surface. Their normal loop is `whoami`, project/issue discovery, `get_issue_context`, `claim_issue`, execution updates, and transitions. Local Board filters `tools/list` by the authenticated role: members do not see credential administration, and viewers see only read tools. Authorization is still enforced server-side for every call.
+Subagents do not need the administrative tool surface. Local Board filters `tools/list` by the
+authenticated role: members do not see credential administration or correction tools, and viewers see
+only read tools. Authorization is still enforced server-side for every call.
 
 ## Work lifecycle
 
-1. Call `whoami`, `list_projects`, and `get_project_context`.
-2. Search for existing work with `list_issues`; avoid duplicates.
-3. Read `get_issue_context`, including blockers, comments, checklist, policy, transitions, and revision.
-4. Create missing work with acceptance criteria and checklist, or claim existing work with `claim_issue`.
-5. Keep comments, checklist, dependencies, labels, attachments, and Git links current.
-6. Use the latest `expected_revision` for issue-field updates, claims, releases, and transitions. Comments, checklist items, labels, dependencies, attachments, and Git links have their own identifiers and do not change the issue revision. On `conflict`, fetch fresh context before deciding whether to retry.
-7. Request review and transition only through `available_transitions`. Release abandoned or handed-off work.
+1. The MCP protocol handshake (`initialize`) — performed automatically by your MCP client on
+   connect, unrelated to the operator's one-time `local-board init` — already returns your
+   identity and the board snapshot (prefix, statuses with categories, labels, milestones,
+   policy) in its `instructions`, so no discovery calls are needed. `whoami` remains available
+   to re-check identity mid-session.
+2. Find work with `list_issues`, filtered by the milestone, label, or issue list your planner or user
+   gave you; read the full issue with `get_issue` before acting.
+3. Claim existing work with `claim_issue`, or create missing work with `create_issue` — put the
+   acceptance criteria in the Markdown description; `- [ ]` checkboxes are the checklist.
+4. Update fields, labels, and status with a single `update_issue` call. Transitions are free: pick
+   the status by its category, and treat `blocked: true` as a signal to finish blockers first.
+5. Record decisions, progress, and handoffs with `add_comment`; when work lands, link the
+   commit(s) and PR/MR with `add_git_link`. Branches are not linked — the issue identifier
+   in the branch name carries that association inside git.
+6. Pass the latest `expected_revision` on every mutation. On `conflict`, re-read the issue before
+   deciding whether to retry.
+7. Move the issue to a `completed`-category status when done, or `release_issue` when abandoning
+   or handing off unfinished work.
 
-Claims are leases, not permanent locks. The default lease is 30 minutes; a successful repeat `claim_issue` by the same actor renews it. For longer work, reclaim with the latest issue revision before expiry and re-read context. Stop and coordinate if the issue has been claimed by somebody else.
+Claims are leases, not permanent locks. The default lease is 30 minutes; a successful repeat
+`claim_issue` by the same actor renews it. For longer work, reclaim with the latest issue revision
+before expiry and re-read context. Stop and coordinate if the issue has been claimed by somebody else.
 
-`available_transitions` reflects workflow edges and blocking/assignment rules, but the agent remains responsible for acceptance criteria, checklist completion, reviewer policy, and branch naming. Do not interpret an offered terminal transition as proof that the work is complete.
+The server enforces only invariants: statuses must exist, revisions must be current, claims are
+atomic, dependency cycles are rejected, and policy may require an assignee before a `started`
+status. Everything else — review rules, branch naming, when work counts as complete — is the
+agent's and the user's responsibility, expressed in repository instructions, not in the server.
 
 If MCP is unavailable, report the failure instead of creating a second task system. A human can run `local-board doctor`; an agent with shell access may run it without printing the token.

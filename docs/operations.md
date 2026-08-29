@@ -27,15 +27,18 @@ AGENTS.md                    tracked discovery bridge (created only when absent)
 .local-board/AGENT.md       tracked repository policy
 .local-board/state/         ignored SQLite runtime
 .local-board/backups/       ignored future backup location
-.local-board/attachments/   ignored local artifacts
 .local-board/secrets/       ignored local secrets
 ```
 
 Run one `local-board serve` process for the common Git repository. All local worktrees and agents should connect to that server URL rather than starting parallel servers or accessing the database. The database is not synchronized through Git or between hosts.
 
+## Keeping the server alive
+
+`local-board serve` is a plain foreground process with no built-in supervisor. If agents depend on it for hours, run it under your own supervisor — a systemd `--user` unit, foreman, or a simple restart loop. `.local-board/state/server.json` holds the live server's URL and PID and is removed on clean shutdown; if it exists but its PID is dead, the server died uncleanly (`local-board doctor` reports this). Fatal crashes leave a traceback in `.local-board/state/server-crash.log`.
+
 ## Recovery boundary
 
-Use `local-board backup [path]` to create a consistent online snapshot and checksum manifest. Do not treat a plain filesystem copy of `board.db` during active WAL writes as a valid backup.
+Use `local-board backup [path]` to create a consistent online snapshot and checksum manifest. Do not treat a plain filesystem copy of `board.db` during active WAL writes as a valid backup. The command prints a human-readable summary; pass `--json` to capture the manifest on stdout for a script.
 
 Stop `local-board serve` before restoring, then run:
 

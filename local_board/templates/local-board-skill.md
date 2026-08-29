@@ -1,55 +1,51 @@
 ---
 name: local-board
-description: Coordinate repository work through the Local Board HTTP MCP server. Use whenever an agent needs to plan, discover, claim, implement, review, block, update, or complete repository issues; when creating work discovered during implementation; or when handing work to another human or agent.
+description: Coordinate repository work through the Local Board HTTP MCP server. Use whenever an agent needs to plan work into milestones and issues, discover, claim, implement, review, comment on, or complete issues on this repository's agile board, or hand off work to another agent or human.
 ---
 
 # Local Board
 
-Treat Local Board as the source of truth for operational work. Use MCP tools, never SQLite or Local Board HTTP internals directly.
+Local Board is this repository's agile board — one project per repository. Issues are identified as `{prefix}-{number}`, e.g. `APP-12`.
 
-## Start work
+## Session context
 
-1. Call `whoami`. Stop and report an authentication problem if it fails.
-2. Call `list_projects`, then `get_project_context` for the relevant project. Follow its workflow and `agent_policy`.
-3. Call `list_issues` with a focused query before creating work. Avoid duplicates.
-4. Call `get_issue_context` before acting. Read the description, checklist, comments, dependencies, `blocked`, available transitions, assignee, reviewer, and `revision`.
-5. If no issue exists, call `create_issue` with a concise title, Markdown acceptance criteria, correct type and priority, then add a checklist.
-6. Call `claim_issue` with the current revision before implementation. On `conflict`, fetch fresh context; never blindly retry a stale mutation.
+Your MCP client performs the MCP protocol handshake (`initialize`) automatically when it connects. The response's `instructions` field already carries your identity, the project prefix, statuses, labels, milestones, and policy — do not re-fetch them. This handshake is unrelated to `local-board init`, the operator's one-time repository bootstrap. If your client does not surface `instructions`, call `get_board_context` once; call `whoami` when you only need to re-check who you are. The tracked `.local-board/project.toml` is the same configuration in file form.
 
-## Describe new work
+## Work loop
 
-- Choose `task` for bounded implementation or documentation with a known outcome; `bug` for behavior that contradicts an expected result; `feature` for a new or materially expanded user-visible capability; `chore` for maintenance, tooling, dependencies, or cleanup without a direct behavior change; and `epic` only for a multi-issue outcome that will be decomposed and linked.
-- Choose priority from impact and urgency: `urgent` for active security, data-loss, or production-stop incidents; `high` for major impact or a near deadline without a reasonable workaround; `medium` for ordinary planned work; `low` for minor deferrable improvements; and `none` only when the project intentionally leaves prioritization unset. Do not inflate priority to gain attention.
-- Write the description in Markdown with the problem or context, scope, acceptance criteria, constraints or risks, and validation plan. Add a checklist of concrete, independently verifiable completion items and keep it current; do not mark an item complete before evidence exists.
+1. Call `list_issues`, filtered by the milestone, label, or query you were given (or ask the user/planner which to use). Search before creating work — a focused `list_issues` query first, so you do not file a duplicate. When you are the planner, work the other direction: turn the plan into milestones and issues with acceptance criteria before implementation agents start.
+2. Call `get_issue` to read the full description, comments, labels, dependencies, blockers, and revision.
+3. Do not start an issue whose `blocked` is `true` — finish or reassign its blockers first. The server does not enforce this: `blocked` is a signal derived from open dependencies, not a lock, and honoring it is this instruction's job.
+4. Call `claim_issue` with the current `revision` before you start working on it — implementation, planning, testing, and review alike.
+5. Work. Add short `add_comment` entries for decisions, material progress, and handoffs. Material newly discovered work gets its own issue — do not silently expand this one's scope.
+6. When the work is finished — acceptance checkboxes checked, or a comment explaining the ones that are not — call `update_issue` with the latest `revision` to move the issue to a completed-category status (e.g. `Done`). When abandoning or handing off unfinished work, first `add_comment` why — what blocked you, what you learned, what remains — and set any label or status that helps the next agent, then call `release_issue`.
 
-## Execute and coordinate
+Statuses have fixed categories with a normative direction — backlog → unstarted → started → completed, with canceled reachable from anywhere — and configurable names. That ordering is the expected path: real work marches forward along it through the loop above. Transitions are nevertheless free: the server allows any move, including backward ones like completed → unstarted when reopening after a regression, or a triage shortcut straight from Backlog to Done. This is not anarchy — it is deliberate flexibility, so corrections and reopens never need an admin override, and every move lands in the activity journal either way.
 
-- Use the stable identifier such as `APP-12` in tool calls and the branch name.
-- Claims are 30-minute leases by default. For longer work, renew by calling `claim_issue` again with the latest revision before expiry; stop if ownership changed.
-- Call `transition_issue` only with a value from `available_transitions`; pass the latest `expected_revision`.
-- Mark checklist items as work completes. Add short comments for decisions, material progress, blockers, and handoffs.
-- Model prerequisites with `add_dependency`. Do not start an issue whose context says `blocked`.
-- Do not take an issue assigned to another actor. Comment and coordinate instead.
-- Create a new issue for material newly discovered work; do not silently expand scope.
-- Attach repository-relative artifacts and Git references with `add_attachment` and `add_git_link`.
-- Follow `agent_policy.branch_pattern` rather than inventing a global branch convention, and always include the stable issue identifier. After creating or switching to that branch, run `local-board sync-branch` with the token supplied only through `LOCAL_BOARD_TOKEN`. Use `add_git_link` for later commit and PR/MR links.
+## Checklists and structure
 
-## Finish or hand off
+Markdown checkboxes in the description **are** the checklist — `- [ ]` and `- [x]` lines. Update them in place as you complete items; there is no separate checklist API. There are no issue types (use labels instead) and no attachments (use Markdown links to repository-relative paths). Sub-issues use `parent_id`; milestones are phases, not releases.
 
-1. Fetch fresh issue context.
-2. Confirm acceptance criteria and checklist completion.
-3. Link the branch, commit, PR, or MR as available.
-4. Add a concise outcome or handoff comment.
-5. Transition to review when required and ensure a reviewer is assigned.
-6. Transition to the configured terminal state only when policy permits. Call `release_issue` when abandoning or handing off unfinished work.
+## Claims
 
-`available_transitions` does not by itself prove completion. The agent must still enforce acceptance criteria, checklist completion, reviewer requirements, and the configured branch pattern.
+Claiming makes you the assignee and grants a lease (default 30 minutes) — the lease is the mutual-exclusion window, the assignee is the attribution. Renew by calling `claim_issue` again with the latest `revision` before it expires; an expired lease lets another agent take the issue. Never take over an issue whose lease is still live — comment and coordinate with its holder instead. Moving an issue to a completed- or canceled-category status extinguishes the lease itself but keeps you as assignee — do not call `release_issue` on finished work. `release_issue` is only for abandoning or handing off unfinished work; it clears both the lease and the assignee.
 
-## Error handling
+## Verification evidence
 
-- `conflict`: another writer changed the issue. Fetch context and reconsider the operation.
-- `blocked`: resolve the dependency or assignment/policy condition; do not bypass it.
-- `not_found`: rediscover projects, actors, labels, milestones, or the issue identifier.
-- `invalid_request`: inspect `tools/list` and correct the arguments.
+Put the issue identifier in your branch name (`feature/APP-12-login`) — that naming *is* the branch-to-issue link, inside git itself; the board does not store branches. When you finish, `add_git_link` the landing commit(s) and the PR/MR. A comment may quote the verification command and its output as a fenced block, but never paste a script's body into a comment: commit the script to the repository and reference its path and commit instead. An uncommitted verification run is an unreproducible screenshot for the next agent. Land the artifact in git, land the outcome on the board.
 
-Read the bearer token only from `LOCAL_BOARD_TOKEN`. Never expose it in issues, comments, activity, logs, command arguments, commits, or tracked files. Read [references/tools.md](references/tools.md) when selecting less common tools.
+## Mutation responses
+
+Mutations return a compact confirmation — `{identifier, revision, status, category, blocked, assignee}` — not the full issue. Chain the returned `revision` into your next mutation. Pass `return_full_issue: true` only when you need the whole object, or call `get_issue`.
+
+## Review (adapt to your project)
+
+If the issue carries the `review_required` label, move it to "In Review" instead of a Done-category status when you finish, and comment what a reviewer should check. Reviewers pick up review work by claiming the issue — the board does not auto-assign reviewers; if your project routes reviews to a dedicated agent or human, that routing lives in your project's instructions, not in the server. This whole section is a convention, not a server rule — follow your project's actual practice if it differs. When you finish a review, remove the `review_required` label in the same `update_issue` call that changes the status (optionally add a `reviewed` label) — otherwise the board cannot distinguish "needs review" from "reviewed".
+
+## Conflicts and errors
+
+A conflict error means another writer changed the issue since you last read it. The error names the current revision — re-read with `get_issue` and reconsider; never blindly retry a stale mutation. `not_found` means the reference is wrong — rediscover it with `list_issues` (or the briefing's label/milestone lists) instead of guessing. A validation error names the offending field and suggests the fix — correct that one call; there is no need to re-fetch the tool catalog.
+
+## Authentication
+
+Read the bearer token only from the `LOCAL_BOARD_TOKEN` environment variable. Tokens are minted by an admin (`create_actor` / `rotate_actor_token`) — normally the operator or orchestrator that launched you — and delivered through the process environment or a secret store, never through tracked files. If the variable is missing, stop and ask your operator instead of guessing, and never expose a token in issues, comments, commits, or tracked files. See [references/tools.md](references/tools.md) for the full tool list.

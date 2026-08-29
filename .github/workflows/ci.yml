@@ -35,14 +35,62 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
+      # coverage and mcp are CI-only dev tools; the package itself stays
+      # dependency-free. The official `mcp` SDK powers the protocol-conformance
+      # suite (tests/integration/test_mcp_conformance.py), which drives our
+      # hand-rolled MCP server with a real spec-tracking client and guards the
+      # build-vs-buy decision from PR #25; without it installed those tests skip.
       - name: Install package
-        run: python -m pip install .
+        run: python -m pip install . coverage mcp
 
       # Browser automation is not part of this unittest tree. This discovery
       # command runs every current unit, integration, HTTP/e2e, concurrency,
       # and root test and automatically includes future non-browser tests.
-      - name: Run non-browser test suite
-        run: python -m unittest discover -s tests -v
+      # coverage is a CI-only dev tool; the package itself stays dependency-free.
+      - name: Run non-browser test suite under coverage
+        run: python -m coverage run --branch --source=local_board -m unittest discover -s tests -v
+
+      # COVERAGE_FLOOR is a ratchet, not a target: the suite currently measures
+      # ~89% branch coverage, and the floor only guards against regressions.
+      # Raise it as gaps close. cli.py is exercised through subprocess tests,
+      # which this in-process measurement undercounts.
+      - name: Enforce coverage floor
+        env:
+          COVERAGE_FLOOR: "75"
+        run: |
+          python -m coverage report -m --skip-empty
+          python -m coverage report --fail-under="${COVERAGE_FLOOR}"
 
       - name: Compile Python sources
         run: python -m compileall -q local_board tests
+
+  web-ui:
+    name: Web UI (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # Node and Playwright are CI-only dev tools, mirroring coverage and the
+      # mcp SDK above; the package itself stays dependency-free. The suite
+      # boots tests/e2e_ui/serve_fixture.py (a seeded in-process server) via
+      # Playwright's webServer and drives the real browser UI against it.
+      - name: Install Playwright suite
+        working-directory: tests/e2e_ui
+        run: |
+          npm ci
+          npx playwright install chromium --with-deps
+
+      - name: Run web UI tests
+        working-directory: tests/e2e_ui
+        run: npx playwright test

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-board"
-version = "0.0.2"
+version = "0.1.0"
 description = "Repository-local issue tracker with MCP and a lightweight web UI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -20,6 +20,12 @@ classifiers = [
 
 [project.scripts]
 local-board = "local_board.cli:main"
+
+# evals/ (local skill evaluations) and tests/ live at the top level but are not
+# distributable packages; declare the package list explicitly so setuptools'
+# flat-layout auto-discovery does not refuse the build.
+[tool.setuptools]
+packages = ["local_board"]
 
 [tool.setuptools.package-data]
 local_board = ["static/*", "templates/*"]

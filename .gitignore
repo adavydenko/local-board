@@ -7,3 +7,8 @@ __pycache__/
 .pytest_cache/
 dist/
 *.egg-info/
+.coverage
+node_modules/
+tests/e2e_ui/.fixture-token
+tests/e2e_ui/test-results/
+tests/e2e_ui/playwright-report/
