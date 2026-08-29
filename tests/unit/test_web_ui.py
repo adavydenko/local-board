@@ -368,6 +368,24 @@ class WebUiTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"<html", body.lower())
 
+    def test_root_sends_a_strict_content_security_policy(self):
+        """The UI keeps the actor's bearer token in localStorage, so a CSP is the
+        backstop against script injection: even a missed esc()/markdown() escape
+        can't run attacker script or exfiltrate to a third-party origin."""
+        request = Request(self.url + "/")
+        with urlopen(request, timeout=3) as response:
+            self.assertEqual(response.status, 200)
+            policy = response.headers["Content-Security-Policy"]
+        self.assertEqual(
+            policy,
+            "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; "
+            "frame-ancestors 'none'",
+        )
+        directives = {part.strip() for part in policy.split(";")}
+        self.assertIn("script-src 'self'", directives)
+        self.assertIn("default-src 'none'", directives)
+
     def test_root_serves_a_multiline_comment_composer(self):
         body = self._served_js()
         self.assertIn(b'<textarea class="control comment-input"', body)

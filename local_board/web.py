@@ -35,6 +35,21 @@ STATIC_TYPES = {"css": "text/css; charset=utf-8",
                 "svg": "image/svg+xml"}
 _STATIC_SEGMENT = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
 
+# The UI keeps an actor's bearer token in localStorage, so any script
+# injected into the page (a stray XSS in rendered issue/comment/label text)
+# can steal it. A strict CSP is the backstop behind esc()/markdown()'s
+# escaping: no inline or third-party script can execute even if one of
+# those calls is ever missed. style-src needs 'unsafe-inline' for the
+# label-color swatches, which set --label-color via a style="" attribute
+# (not <style> tags or JS-authored stylesheets, so this doesn't reopen
+# script injection); img-src allows data: for the favicon; connect-src
+# 'self' covers the client's own fetch() calls to this server's API.
+CSP_POLICY = (
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; connect-src 'self'; base-uri 'none'; form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+
 # The DNS-rebinding guard: a malicious page can point its own domain at
 # 127.0.0.1 and reach a loopback server from the victim's browser, carrying
 # Host (and on cross-site requests Origin) of the attacker's domain. Every
@@ -73,6 +88,9 @@ def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
+
+        def _csp_header(self) -> None:
+            self.send_header("Content-Security-Policy", CSP_POLICY)
 
         def _empty(self, status: int) -> None:
             self.send_response(status)
@@ -157,6 +175,7 @@ def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
             self.send_header("Content-Length", str(len(body)))
             # Localhost tool: freshness beats caching, a stale module is a subtle bug.
             self.send_header("Cache-Control", "no-cache")
+            self._csp_header()
             self.end_headers()
             self.wfile.write(body)
 
@@ -184,6 +203,7 @@ def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
+                self._csp_header()
                 self.end_headers()
                 self.wfile.write(body)
                 return
