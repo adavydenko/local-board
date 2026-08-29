@@ -3,7 +3,7 @@ import {$, $$, esc, initials, humanize, relativeTime, markdown, notify, safeExte
 import {api} from '../api.js';
 import {render, openDetail, setView} from '../main.js';
 import {statusIndicator, priorityMark} from './issues.js';
-import {labelForm} from '../app.js';
+import {labelForm} from './settings/labels.js';
 
 export function statusOptions(selected){return statusesSorted().map(status=>`<option value="${esc(status.name)}" ${status.name===selected?'selected':''}>${esc(status.name)}</option>`).join('')}
 

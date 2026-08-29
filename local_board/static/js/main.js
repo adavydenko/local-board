@@ -1,10 +1,10 @@
 import {store, canWrite, defaultNewIssueAssignee} from './store.js';
-import {$, $$, esc, notify} from './dom.js';
+import {$, $$, esc, initials, notify} from './dom.js';
 import {api} from './api.js';
 import {
-  renderShell, renderSettings,
+  renderSettings,
   handleSettingsTabs, handleSettingsAction, handleSettingsSubmit, handleSettingsTabKeydown, handleMilestoneEditorDismissal,
-} from './app.js';
+} from './views/settings/index.js';
 import {renderFilters, renderIssues, clearIssueFilters, updateBoardScrollHint} from './views/issues.js';
 import {renderActivity} from './views/activity.js';
 import {
@@ -24,6 +24,15 @@ export async function loadAll(){
 export async function reloadBoard(){
   store.data=await api('/api/dashboard');
   render();
+}
+
+function renderShell(){
+  const board=store.data.board||{};
+  boardName.textContent=board.name||'Repository';boardPrefix.textContent=board.prefix?`${board.prefix} board`:'Local workspace';
+  boardMark.textContent=(board.prefix||'LB').slice(0,3);headerBoard.textContent=board.name||'Board';
+  issueCount.textContent=(store.data.issues||[]).length;
+  actorName.textContent=store.identity?.name||'Not connected';actorAvatar.textContent=initials(store.identity?.name);
+  actorKind.textContent=store.identity?`${store.identity.kind} · ${store.identity.role}`:'Actor';
 }
 
 export function render(){
