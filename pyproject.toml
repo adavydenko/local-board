@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "local-board"
-version = "0.1.0"
+version = "0.2.0"
 description = "Repository-local issue tracker with MCP and a lightweight web UI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,4 +28,4 @@ local-board = "local_board.cli:main"
 packages = ["local_board"]
 
 [tool.setuptools.package-data]
-local_board = ["static/*", "templates/*"]
+local_board = ["static/**/*", "templates/*"]

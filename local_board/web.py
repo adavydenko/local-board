@@ -6,6 +6,7 @@ import faulthandler
 
 import json
 import os
+import re
 import sys
 import traceback
 from datetime import UTC, datetime
@@ -23,6 +24,16 @@ from .errors import describe
 
 
 MAX_BODY_BYTES = 1_000_000
+
+# The modular UI is served from static/. The MIME table is explicit because
+# browsers refuse to execute <script type="module"> served with a wrong
+# Content-Type — a miss here is a silent white screen, so a unit test pins
+# every entry. Segments are validated against this pattern before touching the
+# filesystem: no dot-prefixed names, which also rules out ".." traversal.
+STATIC_TYPES = {"css": "text/css; charset=utf-8",
+                "js": "text/javascript; charset=utf-8",
+                "svg": "image/svg+xml"}
+_STATIC_SEGMENT = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9._-]*")
 
 # The DNS-rebinding guard: a malicious page can point its own domain at
 # 127.0.0.1 and reach a loopback server from the victim's browser, carrying
@@ -128,6 +139,27 @@ def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
             raw = self.rfile.read(length) if length else b""
             return json.loads(raw) if raw else {}
 
+        def _serve_static(self, segments):
+            ok = bool(segments) and all(_STATIC_SEGMENT.fullmatch(part) for part in segments)
+            content_type = STATIC_TYPES.get(segments[-1].rsplit(".", 1)[-1]) if ok else None
+            if content_type is None:
+                self._json(404, {"error": {"code": "not_found", "message": "no such file",
+                                           "retryable": False}})
+                return
+            try:
+                body = files("local_board").joinpath("static", *segments).read_bytes()
+            except (FileNotFoundError, IsADirectoryError, NotADirectoryError, PermissionError):
+                self._json(404, {"error": {"code": "not_found", "message": "no such file",
+                                           "retryable": False}})
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            # Localhost tool: freshness beats caching, a stale module is a subtle bug.
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            self.wfile.write(body)
+
         def _route(self):
             parsed = urlparse(self.path)
             parts = [unquote(part) for part in parsed.path.strip("/").split("/") if part]
@@ -155,6 +187,10 @@ def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
                 self.end_headers()
                 self.wfile.write(body)
                 return
+            if parts[0] == "static":
+                self._serve_static(parts[1:])
+                return
+
             if parts == ["mcp"]:
                 self.send_response(405)
                 self.send_header("Allow", "POST")

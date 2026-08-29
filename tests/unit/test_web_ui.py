@@ -227,6 +227,33 @@ class WebUiTest(unittest.TestCase):
         self.assertEqual(body["status"], "ok")
         self.assertEqual(body["version"], __version__)
 
+    def test_static_assets_are_served_with_exact_content_types(self):
+        """Browsers refuse ES modules with a wrong Content-Type, so pin each one."""
+        static_root = Path(__file__).parents[2] / "local_board" / "static"
+        expected = {"css": "text/css; charset=utf-8",
+                    "js": "text/javascript; charset=utf-8",
+                    "svg": "image/svg+xml"}
+        for extension, content_type in expected.items():
+            probe = static_root / f"probe-test.{extension}"
+            probe.write_text("/* probe */", encoding="utf-8")
+            self.addCleanup(probe.unlink)
+            request = Request(f"{self.url}/static/probe-test.{extension}")
+            with urlopen(request, timeout=3) as response:
+                self.assertEqual(response.status, 200)
+                self.assertEqual(response.headers["Content-Type"], content_type)
+                self.assertEqual(response.headers["Cache-Control"], "no-cache")
+
+    def test_static_route_rejects_traversal_hidden_and_unknown_types(self):
+        for path in ("/static/../pyproject.toml",
+                     "/static/%2e%2e/db.py",
+                     "/static/.hidden.css",
+                     "/static/index.html",
+                     "/static/missing.css",
+                     "/static/"):
+            status, body = self.request("GET", path, token=False)
+            self.assertEqual(status, 404, path)
+            self.assertEqual(body["error"]["code"], "not_found", path)
+
     def test_root_serves_static_index_without_auth(self):
         status, body = self.request("GET", "/", token=False, parse_json=False)
         self.assertEqual(status, 200)
