@@ -21,6 +21,8 @@ class WebUiMarkupTest(unittest.TestCase):
         cls.html = (Path(__file__).parents[2] / "local_board" / "static" / "index.html").read_text()
         cls.css_dir = Path(__file__).parents[2] / "local_board" / "static" / "css"
         cls.css = "\n".join(path.read_text() for path in sorted(cls.css_dir.glob("*.css")))
+        cls.js_dir = Path(__file__).parents[2] / "local_board" / "static" / "js"
+        cls.js = "\n".join(path.read_text() for path in sorted(cls.js_dir.rglob("*.js")))
 
     def test_all_css_colors_are_tokenized(self):
         """Every color in CSS must reference a :root token; new colors get new tokens.
@@ -45,7 +47,7 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn('id="issueList"', self.html)
         self.assertIn('data-layout="list"', self.html)
         self.assertIn('data-layout="board"', self.html)
-        self.assertIn("let currentLayout='list'", self.html)
+        self.assertIn("currentLayout: 'list',", self.js)
 
     def test_issue_detail_is_an_in_app_page_not_a_modal(self):
         self.assertIn('id="issueView"', self.html)
@@ -69,34 +71,34 @@ class WebUiMarkupTest(unittest.TestCase):
 
     def test_new_issue_can_be_assigned_when_created_in_a_started_status(self):
         self.assertIn('id="issueAssignee"', self.html)
-        self.assertIn('assignee_id:assignee?+assignee:null', self.html)
+        self.assertIn('assignee_id:assignee?+assignee:null', self.js)
 
     def test_new_issue_in_started_status_defaults_to_current_actor(self):
-        self.assertIn("function defaultNewIssueAssignee(status)", self.html)
-        self.assertIn("statusCategory(status)==='started'?identity?.id:null", self.html)
+        self.assertIn("export function defaultNewIssueAssignee(status)", self.js)
+        self.assertIn("statusCategory(status)==='started'?store.identity?.id:null", self.js)
         self.assertIn(
             "issueAssignee.innerHTML=actorOptions(defaultNewIssueAssignee(status))",
-            self.html,
+            self.js,
         )
 
     def test_initial_restore_does_not_steal_focus_from_the_skip_link(self):
-        self.assertIn("{updateHistory:false,focusContent:false}", self.html)
+        self.assertIn("{updateHistory:false,focusContent:false}", self.js)
 
     def test_active_primary_navigation_exposes_the_current_page(self):
-        self.assertIn("setAttribute('aria-current',active?'page':'false')", self.html)
+        self.assertIn("setAttribute('aria-current',active?'page':'false')", self.js)
 
     def test_external_git_links_reject_unsafe_url_schemes(self):
-        self.assertIn("function safeExternalUrl(value)", self.html)
-        self.assertIn("['http:','https:'].includes(url.protocol)", self.html)
+        self.assertIn("export function safeExternalUrl(value)", self.js)
+        self.assertIn("['http:','https:'].includes(url.protocol)", self.js)
 
     def test_history_restores_views_and_direct_issue_links_stay_in_the_app(self):
-        self.assertIn("history.state?.fromApp", self.html)
-        self.assertIn("state?.view==='activity'", self.html)
-        self.assertIn("history.replaceState({view:'issues'}", self.html)
+        self.assertIn("history.state?.fromApp", self.js)
+        self.assertIn("state?.view==='activity'", self.js)
+        self.assertIn("history.replaceState({view:'issues'}", self.js)
 
     def test_claim_conflicts_reload_current_issue_state(self):
-        self.assertIn("async function mutateClaim(action,message)", self.html)
-        self.assertIn("await refreshDetail()", self.html)
+        self.assertIn("export async function mutateClaim(action,message)", self.js)
+        self.assertIn("await refreshDetail()", self.js)
 
     def test_mobile_keeps_the_primary_filters_available(self):
         self.assertIn("#milestoneFilter{grid-column:1}", self.css)
@@ -104,32 +106,32 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertNotIn(".toolbar select{display:none}", self.css)
 
     def test_viewer_role_gets_a_read_only_issue_workspace(self):
-        self.assertIn("function canWrite(){return identity?.role!=='viewer'}", self.html)
-        self.assertIn("if(!canWrite())return readOnlyProperties(issue)", self.html)
+        self.assertIn("export function canWrite(){return store.identity?.role!=='viewer'}", self.js)
+        self.assertIn("if(!canWrite())return readOnlyProperties(issue)", self.js)
 
     def test_settings_overview_exposes_repository_managed_configuration(self):
         self.assertIn('id="settingsView"', self.html)
         self.assertIn('Managed by <code>.local-board/project.toml</code>', self.html)
         self.assertIn('id="configPreview"', self.html)
-        self.assertIn('function projectToml()', self.html)
+        self.assertIn('export function projectToml()', self.js)
 
     def test_settings_is_a_first_class_navigation_and_history_view(self):
         self.assertIn('data-view="settings"', self.html)
-        self.assertIn("settingsView.classList.toggle('hidden',view!=='settings')", self.html)
-        self.assertIn("state?.view==='settings'?'settings'", self.html)
+        self.assertIn("settingsView.classList.toggle('hidden',view!=='settings')", self.js)
+        self.assertIn("state?.view==='settings'?'settings'", self.js)
 
     def test_settings_catalog_renders_complete_status_and_colored_label_lists(self):
-        self.assertIn('function settingsStatusItems(statuses)', self.html)
-        self.assertIn('return statuses.map(status=>', self.html)
-        self.assertIn('function settingsLabelItems(labels)', self.html)
-        self.assertIn('return labels.map(label=>', self.html)
-        self.assertIn('class="catalog-items"', self.html)
+        self.assertIn('export function settingsStatusItems(statuses)', self.js)
+        self.assertIn('return statuses.map(status=>', self.js)
+        self.assertIn('export function settingsLabelItems(labels)', self.js)
+        self.assertIn('return labels.map(label=>', self.js)
+        self.assertIn('class="catalog-items"', self.js)
 
     def test_settings_offers_a_read_first_milestone_manager(self):
         self.assertIn('id="settingsMilestones"', self.html)
-        self.assertIn('data-action="create-milestone"', self.html)
-        self.assertIn('function milestoneProgress(milestone)', self.html)
-        self.assertIn('/api/milestones', self.html)
+        self.assertIn('data-action="create-milestone"', self.js)
+        self.assertIn('export function milestoneProgress(milestone)', self.js)
+        self.assertIn('/api/milestones', self.js)
         self.assertIn('Configuration-managed milestones are edited in <code>project.toml</code>.', self.html)
 
     def test_settings_gives_milestones_a_dedicated_tab(self):
@@ -138,52 +140,52 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn('data-settings-tab="milestones"', self.html)
         self.assertIn('id="settingsOverviewPanel"', self.html)
         self.assertIn('id="settingsMilestonesPanel"', self.html)
-        self.assertIn('function setSettingsTab(tab)', self.html)
+        self.assertIn('export function setSettingsTab(tab)', self.js)
 
     def test_settings_gives_labels_a_dedicated_management_tab_and_issue_side_creation(self):
         self.assertIn('data-settings-tab="labels"', self.html)
         self.assertIn('id="settingsLabelsPanel"', self.html)
         self.assertIn('id="settingsLabels"', self.html)
-        self.assertIn('data-form="create-label"', self.html)
-        self.assertIn('data-action="start-create-issue-label"', self.html)
-        self.assertIn("api('/api/labels',{method:'POST'", self.html)
+        self.assertIn('data-form="create-label"', self.js)
+        self.assertIn('data-action="start-create-issue-label"', self.js)
+        self.assertIn("api('/api/labels',{method:'POST'", self.js)
 
     def test_issue_label_creation_stays_in_an_anchored_visible_picker(self):
         self.assertIn('.label-options{position:absolute;', self.css)
-        self.assertIn("$$('details[data-property-picker=\"labels\"]').find(item=>item.getClientRects().length)", self.html)
-        self.assertIn("picker.querySelector('input[name=\"name\"]')?.focus()", self.html)
+        self.assertIn("$$('details[data-property-picker=\"labels\"]').find(item=>item.getClientRects().length)", self.js)
+        self.assertIn("picker.querySelector('input[name=\"name\"]')?.focus()", self.js)
 
     def test_status_indicators_follow_categories_across_issue_views(self):
         for category in ("backlog", "unstarted", "started", "completed", "canceled"):
             self.assertIn(f".status-indicator.{category}", self.css)
-        self.assertIn("function issueRow(issue,status)", self.html)
-        self.assertIn("items.map(issue=>issueRow(issue,status))", self.html)
-        self.assertIn("function boardCard(issue,status)", self.html)
-        self.assertIn("items.map(issue=>boardCard(issue,status))", self.html)
+        self.assertIn("export function issueRow(issue,status)", self.js)
+        self.assertIn("items.map(issue=>issueRow(issue,status))", self.js)
+        self.assertIn("export function boardCard(issue,status)", self.js)
+        self.assertIn("items.map(issue=>boardCard(issue,status))", self.js)
 
     def test_active_issue_filters_hide_empty_status_groups(self):
-        self.assertIn('function hasActiveIssueFilters()', self.html)
-        self.assertIn('const visibleStatuses=hasActiveIssueFilters()?statuses.filter', self.html)
-        self.assertIn('No issues match the active filters.', self.html)
+        self.assertIn('export function hasActiveIssueFilters()', self.js)
+        self.assertIn('const visibleStatuses=hasActiveIssueFilters()?statuses.filter', self.js)
+        self.assertIn('No issues match the active filters.', self.js)
 
     def test_issue_detail_keeps_secondary_context_in_a_compact_rail(self):
-        self.assertIn('function settingsStatusFlow(statuses)', self.html)
-        self.assertIn('class="status-flow"', self.html)
+        self.assertIn('export function settingsStatusFlow(statuses)', self.js)
+        self.assertIn('class="status-flow"', self.js)
         self.assertIn('class="issue-sidebar"', self.html)
-        self.assertIn('<h2 class="sidebar-section-heading">Blocking</h2>', self.html)
-        self.assertIn('<h2 class="sidebar-section-heading">Git links</h2>', self.html)
-        self.assertIn('class="label-editor"', self.html)
-        self.assertIn('Add label', self.html)
+        self.assertIn('<h2 class="sidebar-section-heading">Blocking</h2>', self.js)
+        self.assertIn('<h2 class="sidebar-section-heading">Git links</h2>', self.js)
+        self.assertIn('class="label-editor"', self.js)
+        self.assertIn('Add label', self.js)
         self.assertNotIn('id="pageTitle"', self.html)
 
     def test_issue_workspace_offers_on_demand_narrative_and_author_comment_editing(self):
-        self.assertIn('data-action="edit-issue"', self.html)
-        self.assertIn('data-form="edit-issue"', self.html)
-        self.assertIn('data-action="edit-comment"', self.html)
-        self.assertIn('data-form="edit-comment"', self.html)
-        self.assertIn('class="inline-edit comment-edit"', self.html)
-        self.assertIn("comment.author_id===identity?.id||identity?.role==='admin'", self.html)
-        self.assertIn("comment.updated_at!==comment.created_at", self.html)
+        self.assertIn('data-action="edit-issue"', self.js)
+        self.assertIn('data-form="edit-issue"', self.js)
+        self.assertIn('data-action="edit-comment"', self.js)
+        self.assertIn('data-form="edit-comment"', self.js)
+        self.assertIn('class="inline-edit comment-edit"', self.js)
+        self.assertIn("comment.author_id===store.identity?.id||store.identity?.role==='admin'", self.js)
+        self.assertIn("comment.updated_at!==comment.created_at", self.js)
 
     def test_inline_edit_actions_do_not_reserve_issue_description_width(self):
         self.assertNotIn('.description-wrap>.markdown{padding-right', self.css)
@@ -207,6 +209,17 @@ class WebUiTest(unittest.TestCase):
         self.server.server_close()
         self.thread.join(timeout=2)
         self.tmp.cleanup()
+
+    def _served_js(self):
+        """Concatenated bytes of every ES module the client actually ships."""
+        js_dir = Path(__file__).parents[2] / "local_board" / "static" / "js"
+        names = sorted(path.name for path in js_dir.glob("*.js"))
+        combined = b""
+        for name in names:
+            status, body = self.request("GET", f"/static/js/{name}", token=False, parse_json=False)
+            self.assertEqual(status, 200)
+            combined += body
+        return combined
 
     def request(self, method, path, *, body=None, token=True, headers=None, parse_json=True):
         merged = {"Content-Type": "application/json"}
@@ -267,23 +280,20 @@ class WebUiTest(unittest.TestCase):
         self.assertIn(b"<html", body.lower())
 
     def test_root_serves_a_multiline_comment_composer(self):
-        status, body = self.request("GET", "/", token=False, parse_json=False)
-        self.assertEqual(status, 200)
+        body = self._served_js()
         self.assertIn(b'<textarea class="control comment-input"', body)
         self.assertIn(b'data-action="cancel-comment"', body)
         self.assertIn(b"Markdown supported", body)
 
     def test_root_serves_on_demand_issue_property_pickers(self):
-        status, body = self.request("GET", "/", token=False, parse_json=False)
-        self.assertEqual(status, 200)
+        body = self._served_js()
         self.assertIn(b'class="property-picker"', body)
         self.assertIn(b'data-action="property-trigger"', body)
         self.assertIn(b'data-action="set-property"', body)
         self.assertNotIn(b'<select data-field="status">', body)
 
     def test_root_serves_dismissible_property_pickers_and_actionable_empty_states(self):
-        status, body = self.request("GET", "/", token=False, parse_json=False)
-        self.assertEqual(status, 200)
+        body = self._served_js()
         self.assertIn(b"function dismissPropertyPickers", body)
         self.assertIn(b"function focusPropertyPicker", body)
         self.assertIn(b"event.key!=='Escape'", body)
