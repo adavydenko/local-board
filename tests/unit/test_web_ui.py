@@ -19,20 +19,27 @@ class WebUiMarkupTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.html = (Path(__file__).parents[2] / "local_board" / "static" / "index.html").read_text()
+        cls.css_dir = Path(__file__).parents[2] / "local_board" / "static" / "css"
+        cls.css = "\n".join(path.read_text() for path in sorted(cls.css_dir.glob("*.css")))
 
     def test_all_css_colors_are_tokenized(self):
         """Every color in CSS must reference a :root token; new colors get new tokens.
 
-        This is a ratchet: outside the :root block(s), no hex or rgb()/rgba()
-        literal may appear in the stylesheet. It keeps the palette themeable
-        from one place instead of drifting back into scattered literals.
+        This is a ratchet: outside tokens.css's :root block, no hex or
+        rgb()/rgba() literal may appear in any stylesheet under static/css.
+        It keeps the palette themeable from one place instead of drifting
+        back into scattered literals.
         """
         import re
 
-        style = self.html.split("<style>", 1)[1].split("</style>", 1)[0]
-        outside_root = re.sub(r":root\{[^}]*\}", "", style)
-        literals = re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)", outside_root)
-        self.assertEqual(literals, [], f"color literals outside :root tokens: {literals}")
+        for css_path in sorted(self.css_dir.glob("*.css")):
+            css = css_path.read_text()
+            if css_path.name == "tokens.css":
+                continue
+            literals = re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)", css)
+            self.assertEqual(
+                literals, [], f"color literals outside tokens.css in {css_path.name}: {literals}"
+            )
 
     def test_issue_workspace_defaults_to_a_grouped_list_with_optional_board_view(self):
         self.assertIn('id="issueList"', self.html)
@@ -92,9 +99,9 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn("await refreshDetail()", self.html)
 
     def test_mobile_keeps_the_primary_filters_available(self):
-        self.assertIn("#milestoneFilter{grid-column:1}", self.html)
-        self.assertIn("#assigneeFilter{grid-column:2}", self.html)
-        self.assertNotIn(".toolbar select{display:none}", self.html)
+        self.assertIn("#milestoneFilter{grid-column:1}", self.css)
+        self.assertIn("#assigneeFilter{grid-column:2}", self.css)
+        self.assertNotIn(".toolbar select{display:none}", self.css)
 
     def test_viewer_role_gets_a_read_only_issue_workspace(self):
         self.assertIn("function canWrite(){return identity?.role!=='viewer'}", self.html)
@@ -142,13 +149,13 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn("api('/api/labels',{method:'POST'", self.html)
 
     def test_issue_label_creation_stays_in_an_anchored_visible_picker(self):
-        self.assertIn('.label-options{position:absolute;', self.html)
+        self.assertIn('.label-options{position:absolute;', self.css)
         self.assertIn("$$('details[data-property-picker=\"labels\"]').find(item=>item.getClientRects().length)", self.html)
         self.assertIn("picker.querySelector('input[name=\"name\"]')?.focus()", self.html)
 
     def test_status_indicators_follow_categories_across_issue_views(self):
         for category in ("backlog", "unstarted", "started", "completed", "canceled"):
-            self.assertIn(f".status-indicator.{category}", self.html)
+            self.assertIn(f".status-indicator.{category}", self.css)
         self.assertIn("function issueRow(issue,status)", self.html)
         self.assertIn("items.map(issue=>issueRow(issue,status))", self.html)
         self.assertIn("function boardCard(issue,status)", self.html)
@@ -179,8 +186,8 @@ class WebUiMarkupTest(unittest.TestCase):
         self.assertIn("comment.updated_at!==comment.created_at", self.html)
 
     def test_inline_edit_actions_do_not_reserve_issue_description_width(self):
-        self.assertNotIn('.description-wrap>.markdown{padding-right', self.html)
-        self.assertIn('.description-wrap .inline-edit{position:absolute;right:-36px', self.html)
+        self.assertNotIn('.description-wrap>.markdown{padding-right', self.css)
+        self.assertIn('.description-wrap .inline-edit{position:absolute;right:-36px', self.css)
 
 
 class WebUiTest(unittest.TestCase):

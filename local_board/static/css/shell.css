@@ -1,0 +1,61 @@
+.app{display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);min-height:100vh}
+.sidebar{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:10px 8px;background:var(--sidebar);border-right:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:9px;height:40px;padding:0 8px;margin-bottom:10px;font-weight:600;letter-spacing:-.01em}
+.logo{position:relative;width:22px;height:22px;flex:0 0 auto;border-radius:6px;background:var(--ink);color:var(--on-accent);display:grid;place-items:center;font-size:10px;font-weight:700}
+.logo:after{content:"";position:absolute;width:6px;height:6px;border:1.5px solid var(--on-accent);transform:rotate(45deg);border-radius:1px}
+.board-switcher{display:flex;align-items:center;gap:9px;width:100%;min-width:0;padding:7px 8px;margin-bottom:15px;border:1px solid transparent;border-radius:var(--radius);background:transparent;text-align:left}
+.board-switcher:hover{background:var(--overlay-hover)}
+.board-mark{width:22px;height:22px;display:grid;place-items:center;border-radius:5px;background:var(--accent);color:var(--on-accent);font-size:10px;font-weight:700;letter-spacing:.02em}
+.board-copy{min-width:0;flex:1}
+.board-copy strong,.board-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.board-copy strong{font-size:13px;font-weight:600}
+.board-copy small{font-size:11px;color:var(--muted)}
+.nav-label{padding:0 9px 5px;color:var(--muted);font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+.primary-nav{display:grid;gap:2px}
+.nav-item{display:flex;align-items:center;gap:10px;width:100%;height:34px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--text-soft);text-align:left;font-weight:500}
+.nav-item:hover{background:var(--overlay-hover);color:var(--text)}
+.nav-item.active{background:var(--overlay-active);color:var(--text);font-weight:600}
+.nav-icon{width:16px;height:16px;color:var(--muted)}
+.nav-item.active .nav-icon{color:var(--text-soft)}
+.nav-count{margin-left:auto;color:var(--muted);font-size:11px;font-variant-numeric:tabular-nums}
+.identity{margin-top:auto;display:flex;align-items:center;gap:9px;padding:9px 8px;border-top:1px solid var(--line)}
+.identity-copy{min-width:0}
+.identity-copy strong,.identity-copy small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.identity-copy strong{font-size:12px;font-weight:600}
+.identity-copy small{font-size:11px;color:var(--muted)}
+.workspace{min-width:0;background:var(--surface)}
+.workspace-header{height:52px;display:flex;align-items:center;gap:12px;padding:0 24px;border-bottom:1px solid var(--line);background:var(--header-veil);position:sticky;top:0;z-index:10;backdrop-filter:blur(12px)}
+.workspace-title{display:flex;align-items:center;gap:8px;min-width:0;font-size:13px;font-weight:600}
+.workspace-title .eyebrow{color:var(--muted);font-weight:500}
+.workspace-actions{margin-left:auto;display:flex;align-items:center;gap:7px}
+.content{min-height:calc(100vh - 52px)}
+.layout-toggle{display:flex;padding:2px;border:1px solid var(--line);border-radius:6px;background:var(--surface-raised);margin-left:auto}
+.layout-button{width:26px;height:24px;display:grid;place-items:center;border:0;border-radius:4px;background:transparent;color:var(--muted)}
+.layout-button:hover{color:var(--text-soft)}
+.layout-button.active{background:var(--surface);color:var(--text);box-shadow:var(--shadow-xs)}
+.layout-button svg{width:13px;height:13px}
+.login{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:20px;background:var(--canvas)}
+.login-card{width:min(380px,100%);padding:30px;border:1px solid var(--line);border-radius:10px;background:var(--surface);box-shadow:var(--shadow-modal)}
+.login-brand{display:flex;align-items:center;gap:9px;margin-bottom:28px;font-weight:600}
+.login-card h1{font-size:20px;letter-spacing:-.025em;margin:0 0 7px}
+.login-card p{margin:0 0 19px;color:var(--muted);font-size:12px;line-height:1.55}
+.login-card .login-hint{margin:-11px 0 19px;font-size:12px}
+.login-card .login-hint code{font:12px ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--text-soft)}
+.login-card label{display:block;margin-bottom:7px;color:var(--text-soft);font-size:12px;font-weight:600}
+.login-card .control{width:100%;height:36px;margin-bottom:10px}
+.login-card .button{width:100%;height:34px}
+.error{min-height:18px;margin-top:9px;color:var(--danger);font-size:12px}
+
+@media(max-width:720px){
+  .app{display:block;padding-bottom:52px}
+  .sidebar{position:fixed;z-index:30;top:auto;bottom:0;left:0;right:0;width:auto;height:52px;display:block;padding:4px 8px;border:0;border-top:1px solid var(--line);background:var(--header-veil);backdrop-filter:blur(14px)}
+  .brand,.board-switcher,.nav-label,.identity{display:none}
+  .primary-nav{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;height:100%;max-width:420px;margin:auto}
+  .nav-item{height:44px;justify-content:center;flex-direction:column;gap:1px;padding:0;font-size:10px}
+  .nav-icon{width:15px;height:15px}
+  .nav-count{display:none}
+  .workspace-header{height:48px;padding:0 12px}
+  .content{min-height:calc(100vh - 100px)}
+  .refresh-label{display:none}
+  .layout-toggle{margin-left:0;grid-column:3;grid-row:1}
+}
