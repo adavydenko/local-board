@@ -80,6 +80,18 @@ local-board serve
 
 Failures print an `error:` line followed by a `hint:` naming the next command to run, and unknown commands suggest the closest match. Environment fallbacks: `LOCAL_BOARD_DB`, `LOCAL_BOARD_CONFIG`, `LOCAL_BOARD_TOKEN`, and `LOCAL_BOARD_DEBUG` (re-raise internal errors with a traceback).
 
+### Starting over
+
+`local-board reset` undoes `init`. Without `--force` it prints what it would remove and changes nothing:
+
+```bash
+local-board reset                        # show the plan
+local-board reset --force                # move .local-board/state/ aside
+local-board reset --all --purge --force  # remove everything init created
+```
+
+State is moved to `state.removed-<timestamp>` beside the original rather than deleted, unless `--purge` is given. `--all` additionally removes `project.toml`, the agent onboarding files, and the `.gitignore` block. Reset refuses to run while a server still holds the state, and never deletes an `AGENTS.md` carrying local edits — `init` will not overwrite it, so `reset` will not remove it.
+
 ## Connect an MCP agent
 
 Start one server for the repository and configure every agent to use its HTTP MCP endpoint:

@@ -8,6 +8,13 @@ from pathlib import Path
 from . import mcp
 
 
+# The runtime block init appends to the target repository's .gitignore.
+# Single source of truth: `init` writes it and `reset` strips it from this
+# same constant, so the two cannot drift.
+GITIGNORE_MARKER = "# Local Board runtime"
+GITIGNORE_PATHS = (".local-board/state/", ".local-board/backups/", ".local-board/secrets/")
+GITIGNORE_BLOCK = "\n" + GITIGNORE_MARKER + "\n" + "".join(f"{path}\n" for path in GITIGNORE_PATHS)
+
 # None marks content rendered from the MCP tool catalog instead of a static file,
 # so the cheat-sheet cannot drift from what tools/list actually serves.
 TEMPLATES: dict[Path, str | None] = {

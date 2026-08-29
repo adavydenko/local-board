@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -68,18 +69,27 @@ def run_doctor(
             if discoverable else f"merge Local Board instructions into {agents_path}",
         ))
 
-    try:
-        info = board.get_board()
-        checks.append(_check("board", "pass", f"{info['prefix']}: {info['name']}"))
-    except KeyError as exc:
-        checks.append(_check("board", "fail", str(exc).strip("'")))
-
+    # Check the schema before touching any table: a pre-0.1.0 database has none
+    # of them, and probing it raises a bare `no such table` at the operator.
     version = board.schema_version()
+    if 0 < version < SCHEMA_VERSION:
+        checks.append(_check(
+            "database_schema", "fail",
+            f"schema {version} predates the 0.1.0 board format and cannot be upgraded; "
+            f"move {board.path.parent} aside and re-run `local-board init`",
+        ))
+        return {"ok": False, "checks": checks}
     checks.append(_check(
         "database_schema",
         "pass" if version == SCHEMA_VERSION else "fail",
         f"schema {version}; supported {SCHEMA_VERSION}",
     ))
+
+    try:
+        info = board.get_board()
+        checks.append(_check("board", "pass", f"{info['prefix']}: {info['name']}"))
+    except (KeyError, sqlite3.OperationalError) as exc:
+        checks.append(_check("board", "fail", str(exc).strip("'")))
     with board.connect() as db:
         integrity = db.execute("PRAGMA integrity_check").fetchone()[0]
         foreign_keys = [tuple(row) for row in db.execute("PRAGMA foreign_key_check")]

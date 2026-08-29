@@ -16,6 +16,11 @@ from typing import Any, Callable, Iterator
 
 SCHEMA_VERSION = 4
 
+# Every schema below the current one predates the 0.1.0 clean-board model and
+# shares no upgrade path with it, so `init` and `doctor` compare against
+# SCHEMA_VERSION directly instead of enumerating legacy versions. If a future
+# schema gains a migration, the cutoff becomes that migration's floor.
+
 # Statements are executed one by one inside a single BEGIN IMMEDIATE transaction,
 # so concurrent processes cannot race the migration (executescript would commit early).
 SCHEMA_STATEMENTS = [
@@ -257,10 +262,11 @@ class Board:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.transaction() as db:
             version = int(db.execute("PRAGMA user_version").fetchone()[0])
-            if version in (1, 2, 3):
+            if 0 < version < SCHEMA_VERSION:
                 raise RuntimeError(
-                    "this database predates the 0.1.0 board format and cannot be upgraded; "
-                    "back it up and re-run `local-board init` on a fresh state directory"
+                    f"the database at {self.path} predates the 0.1.0 board format (schema "
+                    f"{version}) and cannot be upgraded; back it up, then move {self.path.parent} "
+                    "aside and re-run `local-board init` on a fresh state directory"
                 )
             if version > SCHEMA_VERSION:
                 raise RuntimeError(
