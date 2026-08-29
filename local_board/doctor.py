@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 
 from . import __version__
 from .config import ConfigError, ConfigService, load_config
-from .db import Board, LEGACY_SCHEMA_VERSIONS, SCHEMA_VERSION
+from .db import Board, SCHEMA_VERSION
 
 
 def _check(name: str, status: str, message: str, **details: Any) -> dict[str, Any]:
@@ -72,7 +72,7 @@ def run_doctor(
     # Check the schema before touching any table: a pre-0.1.0 database has none
     # of them, and probing it raises a bare `no such table` at the operator.
     version = board.schema_version()
-    if version in LEGACY_SCHEMA_VERSIONS:
+    if 0 < version < SCHEMA_VERSION:
         checks.append(_check(
             "database_schema", "fail",
             f"schema {version} predates the 0.1.0 board format and cannot be upgraded; "

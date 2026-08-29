@@ -23,7 +23,7 @@ from .config import ConfigError, ConfigService, default_config, load_config, sug
 from .db import Board
 from .doctor import run_doctor
 from .errors import describe
-from .onboarding import install_onboarding
+from .onboarding import GITIGNORE_BLOCK, GITIGNORE_MARKER, install_onboarding
 from .repository import Repository, RepositoryNotFound, resolve_database_path
 from . import reset as reset_module
 from .web import serve
@@ -638,17 +638,10 @@ def _run_config(args: argparse.Namespace, config_path: Path) -> None:
 
 def _ensure_gitignore(root: Path) -> None:
     path = root / ".gitignore"
-    marker = "# Local Board runtime"
     content = path.read_text(encoding="utf-8") if path.exists() else ""
-    if marker in content:
+    if GITIGNORE_MARKER in content:
         return
-    block = (
-        "\n# Local Board runtime\n"
-        ".local-board/state/\n"
-        ".local-board/backups/\n"
-        ".local-board/secrets/\n"
-    )
-    path.write_text(content.rstrip() + block, encoding="utf-8")
+    path.write_text(content.rstrip() + GITIGNORE_BLOCK, encoding="utf-8")
 
 
 if __name__ == "__main__":

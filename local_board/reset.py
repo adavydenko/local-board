@@ -15,16 +15,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from .onboarding import TEMPLATES
+from .onboarding import GITIGNORE_BLOCK, GITIGNORE_MARKER, TEMPLATES
 from importlib.resources import files
-
-GITIGNORE_MARKER = "# Local Board runtime"
-GITIGNORE_BLOCK = (
-    "\n# Local Board runtime\n"
-    ".local-board/state/\n"
-    ".local-board/backups/\n"
-    ".local-board/secrets/\n"
-)
 
 
 class ServerRunning(RuntimeError):

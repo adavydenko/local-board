@@ -16,9 +16,10 @@ from typing import Any, Callable, Iterator
 
 SCHEMA_VERSION = 4
 
-# Schemas 1-3 shipped before the 0.1.0 clean-board model and share no upgrade
-# path with it. Named here so `init` and `doctor` reject them the same way.
-LEGACY_SCHEMA_VERSIONS = frozenset({1, 2, 3})
+# Every schema below the current one predates the 0.1.0 clean-board model and
+# shares no upgrade path with it, so `init` and `doctor` compare against
+# SCHEMA_VERSION directly instead of enumerating legacy versions. If a future
+# schema gains a migration, the cutoff becomes that migration's floor.
 
 # Statements are executed one by one inside a single BEGIN IMMEDIATE transaction,
 # so concurrent processes cannot race the migration (executescript would commit early).
@@ -261,7 +262,7 @@ class Board:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.transaction() as db:
             version = int(db.execute("PRAGMA user_version").fetchone()[0])
-            if version in LEGACY_SCHEMA_VERSIONS:
+            if 0 < version < SCHEMA_VERSION:
                 raise RuntimeError(
                     f"the database at {self.path} predates the 0.1.0 board format (schema "
                     f"{version}) and cannot be upgraded; back it up, then move {self.path.parent} "
