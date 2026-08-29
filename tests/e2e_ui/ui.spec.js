@@ -75,6 +75,18 @@ test('filtered no-results state offers a working Clear filters action', async ({
   await expect(page.locator('.issue-row').first()).toBeVisible();
 });
 
+test('board view shows card milestones and creates issues per column', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/');
+  await page.click('[data-layout="board"]');
+  const card = page.locator('.board-card[data-ref="E2E-2"]');
+  await expect(card.locator('.card-milestone')).toContainText('M1 — Web app MVP');
+  await expect(card.locator('.card-blocked')).toHaveText('Blocked');
+  const todoColumn = page.locator('.board-column', { has: page.locator('.column-heading', { hasText: 'Todo' }) });
+  await todoColumn.locator('[data-new-status="Todo"]').click();
+  await expect(page.locator('#newIssueHeading')).toHaveText('Create issue in Todo');
+});
+
 test('a label created inline attaches to the issue without overflow', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await openIssue(page);

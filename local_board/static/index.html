@@ -142,11 +142,14 @@
     .zero-state strong{display:block;margin-bottom:4px;color:var(--text-soft);font-weight:600}
     .zero-state-actions{margin-top:12px}
 
-    .board-layout{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(255px,1fr);gap:10px;padding:2px 20px 24px;overflow-x:auto;min-height:calc(100vh - 168px);background:var(--canvas);border-top:1px solid var(--line)}
+    .board-layout{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(255px,320px);gap:10px;padding:2px 20px 24px;overflow-x:auto;min-height:calc(100vh - 168px);background:var(--canvas);border-top:1px solid var(--line)}
     .board-layout.can-scroll-right{box-shadow:inset -28px 0 18px -18px var(--scroll-shade)}
     .board-column{min-width:0}
     .column-heading{height:42px;display:flex;align-items:center;gap:8px;padding:0 7px;color:var(--text-soft);font-size:12px;font-weight:600}
     .column-heading .status-count{margin-left:auto}
+    .card-milestone{display:inline-flex;align-items:center;gap:4px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .card-meta-spacer{flex:1}
+    .card-blocked{padding:1px 6px;border-radius:4px;background:var(--danger-soft);color:var(--danger);font-weight:500}
     .board-card{display:block;width:100%;padding:10px 11px;margin-bottom:7px;border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);text-align:left;box-shadow:var(--shadow-xs)}
     .board-card:hover{border-color:var(--line-strong);box-shadow:var(--shadow-sm)}
     .board-card-head{display:flex;align-items:center;gap:7px}
@@ -738,7 +741,9 @@ function issueRow(issue,status){
 }
 
 function boardCard(issue,status){
-  return `<button class="board-card" type="button" data-ref="${esc(issue.identifier)}"><div class="board-card-head"><span class="issue-id">${esc(issue.identifier)}</span>${statusIndicator(status,issue.status)}</div><div class="board-card-title">${esc(issue.title)}</div>${listLabelChips(issue)}<div class="board-card-meta">${priorityMark(issue.priority)}${issue.blocked?'<span style="color:var(--danger)">Blocked</span>':''}${issue.assignee?`<span class="mini-avatar" title="${esc(issue.assignee)}">${esc(initials(issue.assignee))}</span>`:''}</div></button>`;
+  const milestone=issue.milestone_id?`<span class="card-milestone"><span class="milestone-marker" aria-hidden="true">◇</span>${esc(milestoneName(issue.milestone_id))}</span>`:'';
+  const blocked=issue.blocked?'<span class="card-blocked">Blocked</span>':'';
+  return `<button class="board-card" type="button" data-ref="${esc(issue.identifier)}"><div class="board-card-head"><span class="issue-id">${esc(issue.identifier)}</span>${statusIndicator(status,issue.status)}</div><div class="board-card-title">${esc(issue.title)}</div>${listLabelChips(issue)}<div class="board-card-meta">${priorityMark(issue.priority)}${milestone}<span class="card-meta-spacer"></span>${blocked}${issue.assignee?`<span class="mini-avatar" title="${esc(issue.assignee)}">${esc(initials(issue.assignee))}</span>`:''}</div></button>`;
 }
 
 function renderIssues(){
@@ -754,7 +759,8 @@ function renderIssues(){
   }).join('');
   issueBoard.innerHTML=!statuses.length?'<div class="zero-state"><div><strong>No statuses configured</strong>Add statuses in project.toml to organize issues.</div></div>':noMatches?'<div class="zero-state"><div><strong>No matching issues</strong>No issues match the active filters.<div class="zero-state-actions"><button class="button small" type="button" data-action="clear-filters">Clear filters</button></div></div></div>':visibleStatuses.map(status=>{
     const items=issues.filter(issue=>issue.status===status.name);
-    return `<section class="board-column"><div class="column-heading">${statusIndicator(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span></div>${items.map(issue=>boardCard(issue,status)).join('')||'<div class="row-empty">No issues here yet.</div>'}</section>`;
+    const add=canWrite()?`<button class="status-add" type="button" data-new-status="${esc(status.name)}" aria-label="Create issue in ${esc(status.name)}">+</button>`:'';
+    return `<section class="board-column"><div class="column-heading">${statusIndicator(status)}<span>${esc(status.name)}</span><span class="status-count">${items.length}</span>${add}</div>${items.map(issue=>boardCard(issue,status)).join('')||'<div class="row-empty">No issues here yet.</div>'}</section>`;
   }).join('');
   updateBoardScrollHint();
 }
@@ -1289,7 +1295,7 @@ $$('.nav-item').forEach(button=>button.addEventListener('click',()=>setView(butt
 $$('.layout-button').forEach(button=>button.addEventListener('click',()=>setLayout(button.dataset.layout)));
 $$('[data-close]').forEach(button=>button.addEventListener('click',()=>$('#'+button.dataset.close).close()));
 issueList.addEventListener('click',event=>{if(event.target.closest('[data-action="clear-filters"]'))return clearIssueFilters();const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
-issueBoard.addEventListener('click',event=>{if(event.target.closest('[data-action="clear-filters"]'))return clearIssueFilters();const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref)});
+issueBoard.addEventListener('click',event=>{if(event.target.closest('[data-action="clear-filters"]'))return clearIssueFilters();const issue=event.target.closest('[data-ref]');if(issue)openDetail(issue.dataset.ref);const add=event.target.closest('[data-new-status]');if(add)openNewIssue(add.dataset.newStatus)});
 issueBoard.addEventListener('scroll',updateBoardScrollHint);window.addEventListener('resize',updateBoardScrollHint);
 issueView.addEventListener('click',handleIssueAction);issueView.addEventListener('submit',handleDetailSubmit);issueView.addEventListener('keydown',handleCommentShortcut);issueView.addEventListener('keydown',handleInlineEditShortcut);issueView.addEventListener('keydown',handlePropertyPickerDismissal);
 issueView.addEventListener('input',event=>{const composer=event.target.closest('.comment-composer');if(composer)composer.classList.toggle('has-draft',Boolean(composer.querySelector('textarea')?.value.trim()))});
