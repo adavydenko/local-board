@@ -2,12 +2,13 @@ import {store, canWrite, defaultNewIssueAssignee} from './store.js';
 import {$, $$, esc, notify} from './dom.js';
 import {api} from './api.js';
 import {
-  renderShell, renderFilters, renderIssues, renderActivity, renderSettings, renderDetail,
-  clearIssueFilters, updateBoardScrollHint,
+  renderShell, renderSettings, renderDetail,
   handleIssueAction, handleDetailSubmit, handleCommentShortcut, handleInlineEditShortcut, handlePropertyPickerDismissal,
   handleSettingsTabs, handleSettingsAction, handleSettingsSubmit, handleSettingsTabKeydown, handleMilestoneEditorDismissal,
   refreshDetail, actorOptions, milestoneOptions,
 } from './app.js';
+import {renderFilters, renderIssues, clearIssueFilters, updateBoardScrollHint} from './views/issues.js';
+import {renderActivity} from './views/activity.js';
 
 export async function loadAll(){
   const [me,dashboard]=await Promise.all([api('/api/me'),api('/api/dashboard')]);

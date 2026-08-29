@@ -213,10 +213,12 @@ class WebUiTest(unittest.TestCase):
     def _served_js(self):
         """Concatenated bytes of every ES module the client actually ships."""
         js_dir = Path(__file__).parents[2] / "local_board" / "static" / "js"
-        names = sorted(path.name for path in js_dir.glob("*.js"))
+        relative_paths = sorted(path.relative_to(js_dir).as_posix() for path in js_dir.rglob("*.js"))
         combined = b""
-        for name in names:
-            status, body = self.request("GET", f"/static/js/{name}", token=False, parse_json=False)
+        for relative_path in relative_paths:
+            status, body = self.request(
+                "GET", f"/static/js/{relative_path}", token=False, parse_json=False
+            )
             self.assertEqual(status, 200)
             combined += body
         return combined
