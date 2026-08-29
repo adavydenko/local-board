@@ -10,6 +10,7 @@ dist/
 .coverage
 node_modules/
 tests/e2e_ui/.fixture-token
+tests/e2e_ui/.fixture-viewer-token
 tests/e2e_ui/test-results/
 tests/e2e_ui/playwright-report/
 build/

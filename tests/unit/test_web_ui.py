@@ -2,6 +2,7 @@ import json
 import tempfile
 import threading
 import unittest
+from html.parser import HTMLParser
 from http.server import ThreadingHTTPServer
 from pathlib import Path
 from urllib.error import HTTPError
@@ -13,16 +14,235 @@ from local_board.db import Board
 from local_board.web import make_handler
 
 
-class WebUiMarkupTest(unittest.TestCase):
-    """Small product-contract checks for the dependency-free browser client."""
+_VOID_ELEMENTS = {
+    "area", "base", "br", "col", "embed", "hr", "img", "input",
+    "link", "meta", "param", "source", "track", "wbr",
+}
+
+
+class _Node:
+    """One element in a parsed HTML tree: a tag, its attributes, and children.
+
+    Deliberately minimal — just enough surface (`find`, `find_all`, `text`,
+    `classes`) for the structural shell contracts below. Not a general HTML
+    tree; e.g. there's no CSS-selector combinator support, just tag/attr
+    matching over descendants.
+    """
+
+    def __init__(self, tag, attrs, parent=None):
+        self.tag = tag
+        self.attrs = dict(attrs)
+        self.parent = parent
+        self.children: list["_Node"] = []
+        self._text_parts: list[str] = []
+
+    def classes(self):
+        return set((self.attrs.get("class") or "").split())
+
+    def text(self):
+        parts = list(self._text_parts)
+        for child in self.children:
+            parts.append(child.text())
+        return "".join(parts)
+
+    def matches(self, tag=None, attrs=None, **kwargs):
+        if tag is not None and self.tag != tag:
+            return False
+        wanted = dict(attrs or {})
+        wanted.update(kwargs)
+        return all(self.attrs.get(key) == value for key, value in wanted.items())
+
+    def walk(self):
+        yield self
+        for child in self.children:
+            yield from child.walk()
+
+    def find(self, tag=None, attrs=None, **kwargs):
+        for node in self.walk():
+            if node is not self and node.matches(tag, attrs, **kwargs):
+                return node
+        return None
+
+    def find_all(self, tag=None, attrs=None, **kwargs):
+        return [node for node in self.walk() if node is not self and node.matches(tag, attrs, **kwargs)]
+
+
+class MarkupTree(_Node, HTMLParser):
+    """Parses one HTML document into a `_Node` tree via stdlib html.parser.
+
+    Lets the tests below assert on the *structure* of the static shell
+    (elements, attributes, nesting) instead of matching substrings in the
+    raw source — substring checks break on harmless reformatting and can't
+    distinguish a real attribute from text that merely looks like one.
+    """
+
+    def __init__(self, html):
+        _Node.__init__(self, "[document]", {})
+        HTMLParser.__init__(self, convert_charrefs=True)
+        self._stack = [self]
+        self.feed(html)
+
+    def handle_starttag(self, tag, attrs):
+        node = _Node(tag, attrs, parent=self._stack[-1])
+        self._stack[-1].children.append(node)
+        if tag not in _VOID_ELEMENTS:
+            self._stack.append(node)
+
+    def handle_startendtag(self, tag, attrs):
+        self._stack[-1].children.append(_Node(tag, attrs, parent=self._stack[-1]))
+
+    def handle_endtag(self, tag):
+        for index in range(len(self._stack) - 1, 0, -1):
+            if self._stack[index].tag == tag:
+                del self._stack[index:]
+                return
+
+    def handle_data(self, data):
+        self._stack[-1]._text_parts.append(data)
+
+
+class WebUiShellTest(unittest.TestCase):
+    """Structural contracts for the static HTML shell (local_board/static/index.html).
+
+    Formerly WebUiMarkupTest: that class asserted on raw substrings of the
+    concatenated HTML/CSS/JS sources, including JS behavior that a markup
+    parser can't see at all. Behavioral contracts (what happens when you
+    click things, navigate, or load data) now live in
+    tests/e2e_ui/contracts.spec.js as real browser interactions instead of
+    string matches on the JS that implements them — see that file's header
+    and the migration mapping in the commit message for where each old
+    test's contract landed. What's left here are checks about the shape of
+    the shell markup itself, done structurally via `MarkupTree`, plus a
+    small, clearly-marked section of ratchets for which a substring check
+    is still the right tool.
+    """
 
     @classmethod
     def setUpClass(cls):
-        cls.html = (Path(__file__).parents[2] / "local_board" / "static" / "index.html").read_text()
-        cls.css_dir = Path(__file__).parents[2] / "local_board" / "static" / "css"
+        static_root = Path(__file__).parents[2] / "local_board" / "static"
+        cls.html = (static_root / "index.html").read_text()
+        cls.markup = MarkupTree(cls.html)
+        cls.css_dir = static_root / "css"
         cls.css = "\n".join(path.read_text() for path in sorted(cls.css_dir.glob("*.css")))
-        cls.js_dir = Path(__file__).parents[2] / "local_board" / "static" / "js"
-        cls.js = "\n".join(path.read_text() for path in sorted(cls.js_dir.rglob("*.js")))
+
+    def test_head_declares_the_six_stylesheets_in_load_order(self):
+        stylesheets = [link.attrs.get("href") for link in self.markup.find_all("link", attrs={"rel": "stylesheet"})]
+        self.assertEqual(stylesheets, [
+            "/static/css/tokens.css", "/static/css/base.css", "/static/css/shell.css",
+            "/static/css/issues.css", "/static/css/issue-detail.css", "/static/css/settings.css",
+        ])
+
+    def test_head_uses_a_data_uri_favicon_without_an_authenticated_request(self):
+        icon = self.markup.find("link", attrs={"rel": "icon"})
+        self.assertIsNotNone(icon)
+        self.assertEqual(icon.attrs.get("href"), "data:,")
+
+    def test_client_boots_from_a_single_module_script(self):
+        scripts = self.markup.find_all("script")
+        self.assertEqual(len(scripts), 1)
+        self.assertEqual(scripts[0].attrs.get("type"), "module")
+        self.assertEqual(scripts[0].attrs.get("src"), "/static/js/main.js")
+
+    def test_skip_link_and_primary_navigation_are_labeled_for_assistive_tech(self):
+        skip = self.markup.find("a", attrs={"class": "skip-link"})
+        self.assertIsNotNone(skip)
+        self.assertEqual(skip.attrs.get("href"), "#mainContent")
+        main = self.markup.find(attrs={"id": "mainContent"})
+        self.assertIsNotNone(main)
+        self.assertEqual(main.attrs.get("tabindex"), "-1")
+        nav = self.markup.find("nav", attrs={"aria-label": "Primary navigation"})
+        self.assertIsNotNone(nav)
+        self.assertEqual(
+            {button.attrs.get("data-view") for button in nav.find_all("button")},
+            {"issues", "activity", "settings"},
+        )
+
+    def test_status_toast_is_an_accessible_live_region(self):
+        toast = self.markup.find(attrs={"id": "toast"})
+        self.assertIsNotNone(toast)
+        self.assertEqual(toast.attrs.get("role"), "status")
+        self.assertEqual(toast.attrs.get("aria-live"), "polite")
+
+    def test_issue_workspace_offers_list_and_board_containers_and_a_layout_toggle(self):
+        self.assertIsNotNone(self.markup.find(attrs={"id": "issueList"}))
+        self.assertIsNotNone(self.markup.find(attrs={"id": "issueBoard"}))
+        toggle = self.markup.find(attrs={"aria-label": "Issue layout"})
+        self.assertIsNotNone(toggle)
+        self.assertEqual(
+            {button.attrs.get("data-layout") for button in toggle.find_all("button")},
+            {"list", "board"},
+        )
+
+    def test_issue_detail_is_a_page_section_not_a_dialog(self):
+        detail = self.markup.find(attrs={"id": "issueView"})
+        self.assertIsNotNone(detail)
+        self.assertEqual(detail.tag, "section")
+        self.assertIn("hidden", detail.classes())
+        self.assertIsNotNone(self.markup.find("button", attrs={"data-action": "back-to-issues"}))
+        self.assertIsNone(self.markup.find("dialog", attrs={"id": "detailDialog"}))
+        self.assertEqual([dialog.attrs.get("id") for dialog in self.markup.find_all("dialog")], ["issueDialog"])
+
+    def test_no_checklist_style_controls_in_the_shell(self):
+        self.assertEqual(self.markup.find_all("input", attrs={"type": "checkbox"}), [])
+        offending = [
+            node.tag for node in self.markup.walk()
+            if any(token == "check" or token.startswith("checklist") for token in node.classes())
+        ]
+        self.assertEqual(offending, [])
+
+    def test_new_issue_dialog_offers_priority_milestone_and_assignee_fields(self):
+        dialog = self.markup.find("dialog", attrs={"id": "issueDialog"})
+        self.assertIsNotNone(dialog)
+        for field_id in ("issuePriority", "issueMilestone", "issueAssignee"):
+            self.assertIsNotNone(dialog.find(attrs={"id": field_id}), field_id)
+
+    def test_settings_view_exposes_a_tablist_with_three_panels(self):
+        settings = self.markup.find(attrs={"id": "settingsView"})
+        self.assertIsNotNone(settings)
+        self.assertIsNotNone(self.markup.find("button", attrs={"data-view": "settings"}))
+        tablist = settings.find(attrs={"role": "tablist"})
+        self.assertIsNotNone(tablist)
+        self.assertEqual(tablist.attrs.get("aria-label"), "Settings sections")
+        tabs = {tab.attrs.get("data-settings-tab"): tab for tab in tablist.find_all("button", attrs={"role": "tab"})}
+        self.assertEqual(set(tabs), {"overview", "milestones", "labels"})
+        panel_ids = {
+            "overview": "settingsOverviewPanel",
+            "milestones": "settingsMilestonesPanel",
+            "labels": "settingsLabelsPanel",
+        }
+        for name, tab in tabs.items():
+            panel_id = panel_ids[name]
+            self.assertEqual(tab.attrs.get("aria-controls"), panel_id)
+            self.assertIsNotNone(settings.find(attrs={"id": panel_id}), panel_id)
+
+    def test_settings_overview_declares_its_managed_by_note_and_config_preview(self):
+        self.assertIsNotNone(self.markup.find(attrs={"id": "configPreview"}))
+        note = self.markup.find(attrs={"id": "settingsManagedNote"})
+        self.assertIsNotNone(note)
+        self.assertIn("Managed by", note.text())
+        code = note.find("code")
+        self.assertIsNotNone(code)
+        self.assertEqual(code.text(), ".local-board/project.toml")
+
+    def test_settings_milestones_panel_explains_config_managed_milestones(self):
+        panel = self.markup.find(attrs={"id": "settingsMilestonesPanel"})
+        self.assertIsNotNone(panel)
+        self.assertIsNotNone(self.markup.find(attrs={"id": "settingsMilestones"}))
+        self.assertIn("project.toml", panel.text())
+
+    def test_issue_sidebar_landmark_exists_and_legacy_page_title_is_gone(self):
+        sidebar = self.markup.find(attrs={"id": "issueSidebar"})
+        self.assertIsNotNone(sidebar)
+        self.assertEqual(sidebar.attrs.get("aria-label"), "Issue details")
+        self.assertIsNone(self.markup.find(attrs={"id": "pageTitle"}))
+
+    # --- String ratchets --------------------------------------------------
+    # Everything below intentionally checks raw source text instead of
+    # parsed structure or rendered behavior. These are invariants about the
+    # *implementation* (no stray color literals, every status category has
+    # CSS backing) rather than product contracts, so a substring check is
+    # the right tool here and a structural or Playwright test would cost
+    # more for no extra confidence.
 
     def test_all_css_colors_are_tokenized(self):
         """Every color in CSS must reference a :root token; new colors get new tokens.
@@ -43,153 +263,20 @@ class WebUiMarkupTest(unittest.TestCase):
                 literals, [], f"color literals outside tokens.css in {css_path.name}: {literals}"
             )
 
-    def test_issue_workspace_defaults_to_a_grouped_list_with_optional_board_view(self):
-        self.assertIn('id="issueList"', self.html)
-        self.assertIn('data-layout="list"', self.html)
-        self.assertIn('data-layout="board"', self.html)
-        self.assertIn("currentLayout: 'list',", self.js)
+    def test_status_indicator_css_classes_cover_every_status_category(self):
+        """Ratchet, kept as a substring check on purpose.
 
-    def test_issue_detail_is_an_in_app_page_not_a_modal(self):
-        self.assertIn('id="issueView"', self.html)
-        self.assertIn('data-action="back-to-issues"', self.html)
-        self.assertNotIn('id="detailDialog"', self.html)
-        self.assertNotIn('detailDialog.showModal()', self.html)
-
-    def test_checklist_ui_is_not_promoted_by_the_web_client(self):
-        self.assertNotIn('for checklist items', self.html)
-        self.assertNotIn('class="check', self.html)
-        self.assertNotIn('type="checkbox" checked disabled', self.html)
-
-    def test_primary_navigation_and_status_messages_are_accessible(self):
-        self.assertIn('href="#mainContent"', self.html)
-        self.assertIn('aria-label="Primary navigation"', self.html)
-        self.assertIn('role="status" aria-live="polite"', self.html)
-        self.assertIn('aria-label="Issue layout"', self.html)
-
-    def test_ui_uses_an_embedded_favicon_without_an_authenticated_request(self):
-        self.assertIn('<link rel="icon" href="data:,">', self.html)
-
-    def test_new_issue_can_be_assigned_when_created_in_a_started_status(self):
-        self.assertIn('id="issueAssignee"', self.html)
-        self.assertIn('assignee_id:assignee?+assignee:null', self.js)
-
-    def test_new_issue_in_started_status_defaults_to_current_actor(self):
-        self.assertIn("export function defaultNewIssueAssignee(status)", self.js)
-        self.assertIn("statusCategory(status)==='started'?store.identity?.id:null", self.js)
-        self.assertIn(
-            "issueAssignee.innerHTML=actorOptions(defaultNewIssueAssignee(status))",
-            self.js,
-        )
-
-    def test_initial_restore_does_not_steal_focus_from_the_skip_link(self):
-        self.assertIn("{updateHistory:false,focusContent:false}", self.js)
-
-    def test_active_primary_navigation_exposes_the_current_page(self):
-        self.assertIn("setAttribute('aria-current',active?'page':'false')", self.js)
-
-    def test_external_git_links_reject_unsafe_url_schemes(self):
-        self.assertIn("export function safeExternalUrl(value)", self.js)
-        self.assertIn("['http:','https:'].includes(url.protocol)", self.js)
-
-    def test_history_restores_views_and_direct_issue_links_stay_in_the_app(self):
-        self.assertIn("history.state?.fromApp", self.js)
-        self.assertIn("state?.view==='activity'", self.js)
-        self.assertIn("history.replaceState({view:'issues'}", self.js)
-
-    def test_claim_conflicts_reload_current_issue_state(self):
-        self.assertIn("export async function mutateClaim(action,message)", self.js)
-        self.assertIn("await refreshDetail()", self.js)
-
-    def test_mobile_keeps_the_primary_filters_available(self):
-        self.assertIn("#milestoneFilter{grid-column:1}", self.css)
-        self.assertIn("#assigneeFilter{grid-column:2}", self.css)
-        self.assertNotIn(".toolbar select{display:none}", self.css)
-
-    def test_viewer_role_gets_a_read_only_issue_workspace(self):
-        self.assertIn("export function canWrite(){return store.identity?.role!=='viewer'}", self.js)
-        self.assertIn("if(!canWrite())return readOnlyProperties(issue)", self.js)
-
-    def test_settings_overview_exposes_repository_managed_configuration(self):
-        self.assertIn('id="settingsView"', self.html)
-        self.assertIn('Managed by <code>.local-board/project.toml</code>', self.html)
-        self.assertIn('id="configPreview"', self.html)
-        self.assertIn('export function projectToml()', self.js)
-
-    def test_settings_is_a_first_class_navigation_and_history_view(self):
-        self.assertIn('data-view="settings"', self.html)
-        self.assertIn("settingsView.classList.toggle('hidden',view!=='settings')", self.js)
-        self.assertIn("state?.view==='settings'?'settings'", self.js)
-
-    def test_settings_catalog_renders_complete_status_and_colored_label_lists(self):
-        self.assertIn('export function settingsStatusItems(statuses)', self.js)
-        self.assertIn('return statuses.map(status=>', self.js)
-        self.assertIn('export function settingsLabelItems(labels)', self.js)
-        self.assertIn('return labels.map(label=>', self.js)
-        self.assertIn('class="catalog-items"', self.js)
-
-    def test_settings_offers_a_read_first_milestone_manager(self):
-        self.assertIn('id="settingsMilestones"', self.html)
-        self.assertIn('data-action="create-milestone"', self.js)
-        self.assertIn('export function milestoneProgress(milestone)', self.js)
-        self.assertIn('/api/milestones', self.js)
-        self.assertIn('Configuration-managed milestones are edited in <code>project.toml</code>.', self.html)
-
-    def test_settings_gives_milestones_a_dedicated_tab(self):
-        self.assertIn('role="tablist" aria-label="Settings sections"', self.html)
-        self.assertIn('data-settings-tab="overview"', self.html)
-        self.assertIn('data-settings-tab="milestones"', self.html)
-        self.assertIn('id="settingsOverviewPanel"', self.html)
-        self.assertIn('id="settingsMilestonesPanel"', self.html)
-        self.assertIn('export function setSettingsTab(tab)', self.js)
-
-    def test_settings_gives_labels_a_dedicated_management_tab_and_issue_side_creation(self):
-        self.assertIn('data-settings-tab="labels"', self.html)
-        self.assertIn('id="settingsLabelsPanel"', self.html)
-        self.assertIn('id="settingsLabels"', self.html)
-        self.assertIn('data-form="create-label"', self.js)
-        self.assertIn('data-action="start-create-issue-label"', self.js)
-        self.assertIn("api('/api/labels',{method:'POST'", self.js)
-
-    def test_issue_label_creation_stays_in_an_anchored_visible_picker(self):
-        self.assertIn('.label-options{position:absolute;', self.css)
-        self.assertIn("$$('details[data-property-picker=\"labels\"]').find(item=>item.getClientRects().length)", self.js)
-        self.assertIn("picker.querySelector('input[name=\"name\"]')?.focus()", self.js)
-
-    def test_status_indicators_follow_categories_across_issue_views(self):
+        The five status categories (backlog/unstarted/started/completed/
+        canceled) are a closed set baked into the database's CHECK
+        constraint (see db.py). Every category needs a `.status-indicator.*`
+        rule or issues in that category render an unstyled dot. There's no
+        practical way to exercise all five categories through the running
+        app in one Playwright pass — the fixture board only ever configures
+        a handful of statuses at once — so this stays a direct check
+        against the stylesheet text rather than a structural or e2e one.
+        """
         for category in ("backlog", "unstarted", "started", "completed", "canceled"):
             self.assertIn(f".status-indicator.{category}", self.css)
-        self.assertIn("export function issueRow(issue,status)", self.js)
-        self.assertIn("items.map(issue=>issueRow(issue,status))", self.js)
-        self.assertIn("export function boardCard(issue,status)", self.js)
-        self.assertIn("items.map(issue=>boardCard(issue,status))", self.js)
-
-    def test_active_issue_filters_hide_empty_status_groups(self):
-        self.assertIn('export function hasActiveIssueFilters()', self.js)
-        self.assertIn('const visibleStatuses=hasActiveIssueFilters()?statuses.filter', self.js)
-        self.assertIn('No issues match the active filters.', self.js)
-
-    def test_issue_detail_keeps_secondary_context_in_a_compact_rail(self):
-        self.assertIn('export function settingsStatusFlow(statuses)', self.js)
-        self.assertIn('class="status-flow"', self.js)
-        self.assertIn('class="issue-sidebar"', self.html)
-        self.assertIn('<h2 class="sidebar-section-heading">Blocking</h2>', self.js)
-        self.assertIn('<h2 class="sidebar-section-heading">Git links</h2>', self.js)
-        self.assertIn('class="label-editor"', self.js)
-        self.assertIn('Add label', self.js)
-        self.assertNotIn('id="pageTitle"', self.html)
-
-    def test_issue_workspace_offers_on_demand_narrative_and_author_comment_editing(self):
-        self.assertIn('data-action="edit-issue"', self.js)
-        self.assertIn('data-form="edit-issue"', self.js)
-        self.assertIn('data-action="edit-comment"', self.js)
-        self.assertIn('data-form="edit-comment"', self.js)
-        self.assertIn('class="inline-edit comment-edit"', self.js)
-        self.assertIn("comment.author_id===store.identity?.id||store.identity?.role==='admin'", self.js)
-        self.assertIn("comment.updated_at!==comment.created_at", self.js)
-
-    def test_inline_edit_actions_do_not_reserve_issue_description_width(self):
-        self.assertNotIn('.description-wrap>.markdown{padding-right', self.css)
-        self.assertIn('.description-wrap .inline-edit{position:absolute;right:-36px', self.css)
 
 
 class WebUiTest(unittest.TestCase):

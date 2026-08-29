@@ -1,9 +1,11 @@
 """Boot a disposable Local Board server for the Playwright UI suite.
 
-Runs a seeded board on the requested port and writes the actor token to
-.fixture-token next to this file, then serves until terminated. The seed
-mirrors the scenarios the specs exercise: an assigned In Review issue with
-labels, a milestone, a blocking dependency, and a comment.
+Runs a seeded board on the requested port and writes the admin actor's
+token to .fixture-token and a second, read-only viewer actor's token to
+.fixture-viewer-token (both next to this file), then serves until
+terminated. The seed mirrors the scenarios the specs exercise: an assigned
+In Review issue with labels, a milestone, a blocking dependency, a comment,
+and both a safe and an unsafe (javascript:) Git link.
 """
 
 from __future__ import annotations
@@ -32,6 +34,7 @@ def main() -> None:
     board.configure_board("E2E", "E2E board")
     actor = board.create_actor("alex", kind="human", role="admin")
     actor_id = actor["id"]
+    viewer = board.create_actor("vera", kind="human", role="viewer")
 
     bug = board.create_label(actor_id, "Bug", color="#d14b5a")
     # Two attached labels push the "Add label" trigger toward the viewport edge,
@@ -53,8 +56,14 @@ def main() -> None:
     board.create_issue(actor_id, "Keyboard navigation", status="Todo", priority="medium")
     board.add_dependency(actor_id, main_issue["id"], blocker["id"])
     board.add_comment(actor_id, main_issue["id"], "The first interaction should keep the picker open.")
+    board.add_git_link(actor_id, main_issue["id"], "safe-pr-1", kind="pr", url="https://example.com/pr/1")
+    # safeExternalUrl() must refuse to render this as a clickable link — the
+    # server stores whatever URL an actor sends, so the client is the only
+    # thing standing between a malicious ref and script execution.
+    board.add_git_link(actor_id, main_issue["id"], "unsafe-js-link", kind="commit", url="javascript:alert(1)")
 
     (Path(__file__).parent / ".fixture-token").write_text(actor["token"])
+    (Path(__file__).parent / ".fixture-viewer-token").write_text(viewer["token"])
 
     server = ThreadingHTTPServer(("127.0.0.1", args.port), make_handler(board))
     print(f"serving on http://127.0.0.1:{args.port} as {actor['name']}", flush=True)
