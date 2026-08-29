@@ -240,7 +240,7 @@ python -m unittest discover -s tests/e2e -v
 python -m compileall -q local_board tests
 ```
 
-The browser UI has its own Playwright suite in `tests/e2e_ui/` (Node is a CI-only dev tool, like `coverage` and the `mcp` SDK — the package itself stays dependency-free):
+The browser UI is a set of native ES modules under `local_board/static/` (`css/` for the stylesheet split, `js/` and `js/views/` for the client, one file per feature — see `docs/ui-ux-guidelines.md` "Where things live"). There is no build step; the server serves the files directly and sends a strict Content-Security-Policy. It has its own Playwright suite in `tests/e2e_ui/` (Node is a CI-only dev tool, like `coverage` and the `mcp` SDK — the package itself stays dependency-free):
 
 ```bash
 cd tests/e2e_ui && npm ci && npx playwright install chromium && npx playwright test

@@ -41,6 +41,19 @@ Every color in the stylesheet is a `var(--…)` reference to a token defined in 
 - Text on filled dark or accent surfaces uses `--on-accent`. Label colors from board data flow through the inline `--label-color` custom property with `--label-default` as the fallback.
 - This single-place palette is the prerequisite for theming: a dark theme is a `:root` override, not a stylesheet rewrite.
 
+## Where things live
+
+The web client is a set of native ES modules under `local_board/static/`, cut by feature so a change touches one or two files instead of a single monolith. There is no build step: `index.html` loads `js/main.js` as a module and the browser resolves the imports. Server-side, `web.py` serves `/static/<path>` with an explicit MIME table and a strict CSP.
+
+- **A style change** → the matching `css/*.css`. Colors and scales live only in `css/tokens.css`; a change anywhere else that introduces a raw color fails the tokenization ratchet.
+- **The issue list or board** → `js/views/issues.js` (and `css/issues.css`).
+- **The issue detail page** — pickers, inline editing, comments, claim → `js/views/issue-detail.js` (and `css/issue-detail.css`).
+- **The activity feed** → `js/views/activity.js`.
+- **A settings surface** → `js/views/settings/{index,labels,milestones}.js` (and `css/settings.css`).
+- **Shared plumbing**: `js/store.js` (the one mutable `store` object plus selectors over it), `js/api.js` (`fetch` wrapper, 409 handling), `js/dom.js` (`esc`, `markdown`, formatting helpers), `js/main.js` (bootstrap, routing, the shell, and every event-listener registration).
+
+Two conventions keep the modules honest: mutable state is reached through `store.<field>` (ES module bindings are read-only from importers, so a bare exported `let` cannot be reassigned), and cross-module calls only ever run after load, so the deliberate `main.js ↔ view` import cycles are safe.
+
 ## Issue properties and pickers
 
 - Show status, priority, assignee, milestone, and labels in a read-oriented properties rail.

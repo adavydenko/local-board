@@ -1,6 +1,6 @@
 # Proposal: split index.html into feature modules
 
-Status: proposed — awaiting a decision; no implementation yet.
+Status: **accepted and implemented** (stages 1–2), 2026-08-29, on branch `redesign/0.2-modular-ui` (v0.2.0). The single `index.html` is now `index.html` + `css/*.css` (6) + `js/**/*.js` (10 modules); the static route, the strict CSP this unlocked, and the structural/injection test rewrite all shipped with it. Stage 3 (Preact per view) remains **not** done and is a separate decision. Kept below as the accepted design record.
 
 ## Problem, measured
 
