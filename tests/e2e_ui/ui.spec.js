@@ -57,7 +57,8 @@ test('Escape returns focus to the trigger of the picker that was open', async ({
   for (const field of ['status', 'labels']) {
     await page.click(`[data-property-picker="${field}"] summary:visible`);
     await page.keyboard.press('Escape');
-    expect(await page.evaluate(expected => {
+    // Focus return is deferred to the next animation frame, so poll instead of snapshotting.
+    await expect.poll(() => page.evaluate(expected => {
       const active = document.activeElement;
       return active?.closest('[data-property-picker]')?.dataset.propertyPicker === expected;
     }, field)).toBe(true);
