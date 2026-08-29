@@ -20,6 +20,20 @@ class WebUiMarkupTest(unittest.TestCase):
     def setUpClass(cls):
         cls.html = (Path(__file__).parents[2] / "local_board" / "static" / "index.html").read_text()
 
+    def test_all_css_colors_are_tokenized(self):
+        """Every color in CSS must reference a :root token; new colors get new tokens.
+
+        This is a ratchet: outside the :root block(s), no hex or rgb()/rgba()
+        literal may appear in the stylesheet. It keeps the palette themeable
+        from one place instead of drifting back into scattered literals.
+        """
+        import re
+
+        style = self.html.split("<style>", 1)[1].split("</style>", 1)[0]
+        outside_root = re.sub(r":root\{[^}]*\}", "", style)
+        literals = re.findall(r"#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)", outside_root)
+        self.assertEqual(literals, [], f"color literals outside :root tokens: {literals}")
+
     def test_issue_workspace_defaults_to_a_grouped_list_with_optional_board_view(self):
         self.assertIn('id="issueList"', self.html)
         self.assertIn('data-layout="list"', self.html)

@@ -31,6 +31,16 @@ The app uses one global type scale; new styles must pick from it rather than int
 - Decorative glyphs sit outside the scale: avatar initials are sized to their circles, and icon-only symbols (`×`, `+`) use `16px`.
 - Settings keeps its documented larger scale (see below); `14px` is legal only there.
 
+## Color tokens
+
+Every color in the stylesheet is a `var(--…)` reference to a token defined in `:root`; no hex or `rgba()` literal may appear outside that block (a unit test enforces this). Rules:
+
+- A new color means a new token in `:root`, named for its role (`--danger-edge`, `--code-bg`), not its value.
+- Status categories are colored only through `--status-backlog / -unstarted / -started / -completed / -canceled`; priority meters through `--priority-mark`. Anything status-shaped reuses these rather than inventing a nearby grey.
+- Shadows are complete `--shadow-*` values (`xs / sm / menu / overlay / modal`); pick the closest existing one instead of adding a bespoke shadow.
+- Text on filled dark or accent surfaces uses `--on-accent`. Label colors from board data flow through the inline `--label-color` custom property with `--label-default` as the fallback.
+- This single-place palette is the prerequisite for theming: a dark theme is a `:root` override, not a stylesheet rewrite.
+
 ## Issue properties and pickers
 
 - Show status, priority, assignee, milestone, and labels in a read-oriented properties rail.
