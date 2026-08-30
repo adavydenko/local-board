@@ -40,3 +40,14 @@ export function markdown(value){
   output=output.replace(/\n/g,'<br>');
   return `<div class="markdown">${output}</div>`;
 }
+
+// Label colors come from board data, so they are actor-controlled text landing
+// inside a style="" value. esc() stops it from escaping the attribute, but not
+// from injecting further CSS within it ("red;background:…"), so only a literal
+// hex color is emitted; anything else drops the attribute entirely and lets the
+// stylesheet's own var(--label-color, var(--label-default)) fallback apply.
+export function labelColorStyle(color){
+  const value=String(color??'').trim();
+  return /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(value)
+    ? ` style="--label-color:${value}"` : '';
+}

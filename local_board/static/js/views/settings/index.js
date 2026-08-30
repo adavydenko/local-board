@@ -1,5 +1,5 @@
 import {store, canWrite, statusesSorted} from '../../store.js';
-import {$, $$, esc, humanize, tomlString, notify} from '../../dom.js';
+import {$, $$, esc, humanize, tomlString, notify, labelColorStyle} from '../../dom.js';
 import {api} from '../../api.js';
 import {reloadBoard} from '../../main.js';
 import {statusIndicator} from '../issues.js';
@@ -39,7 +39,7 @@ export function settingsStatusFlow(statuses){
 }
 
 export function settingsLabelItems(labels){
-  return labels.map(label=>`<span class="label-chip"><span class="label-dot" style="--label-color:${esc(label.color||'#8d8d95')}"></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None configured</span>';
+  return labels.map(label=>`<span class="label-chip"><span class="label-dot"${labelColorStyle(label.color)}></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None configured</span>';
 }
 
 export function renderSettings(){

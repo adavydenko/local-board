@@ -1,5 +1,5 @@
 import {store, canWrite, statusesSorted, milestoneName, labelCatalog} from '../store.js';
-import {esc, initials, humanize} from '../dom.js';
+import {esc, initials, humanize, labelColorStyle} from '../dom.js';
 
 export function renderFilters(){
   const previousMilestone=milestoneFilter.value,previousAssignee=assigneeFilter.value;
@@ -24,7 +24,7 @@ export function statusIndicator(status,label=''){
 export function priorityMark(priority){return `<span class="priority-mark ${esc(priority)}" title="${esc(humanize(priority))} priority" aria-label="${esc(humanize(priority))} priority"><i></i><i></i><i></i></span>`}
 
 export function listLabelChips(issue){
-  return (issue.labels||[]).slice(0,2).map(name=>{const label=labelCatalog(name);return `<span class="label-chip" title="${esc(label?.name||name)}"><span class="label-dot" style="--label-color:${esc(label?.color||'#8d8d95')}"></span>${esc(label?.name||name)}</span>`}).join('');
+  return (issue.labels||[]).slice(0,2).map(name=>{const label=labelCatalog(name);return `<span class="label-chip" title="${esc(label?.name||name)}"><span class="label-dot"${labelColorStyle(label?.color)}></span>${esc(label?.name||name)}</span>`}).join('');
 }
 
 export function issueRow(issue,status){

@@ -1,5 +1,5 @@
 import {store, canWrite, defaultNewIssueAssignee} from './store.js';
-import {$, $$, esc, initials, notify} from './dom.js';
+import {$, $$, esc, initials, notify, labelColorStyle} from './dom.js';
 import {api} from './api.js';
 import {
   renderSettings,
@@ -72,7 +72,7 @@ export async function restoreLocation(state=history.state){
 export function openNewIssue(status=''){
   if(!canWrite())return;
   issueForm.reset();issueError.textContent='';issueMilestone.innerHTML=milestoneOptions(null);issueAssignee.innerHTML=actorOptions(defaultNewIssueAssignee(status));
-  issueLabelPicker.innerHTML=(store.data.board?.labels||[]).map(label=>`<label class="label-choice"><input type="checkbox" value="${label.id}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</label>`).join('')||'<span class="muted">No labels configured</span>';
+  issueLabelPicker.innerHTML=(store.data.board?.labels||[]).map(label=>`<label class="label-choice"><input type="checkbox" value="${label.id}"><span class="label-dot"${labelColorStyle(label.color)}></span>${esc(label.name)}</label>`).join('')||'<span class="muted">No labels configured</span>';
   issueDialog.dataset.status=status;newIssueHeading.textContent=status?`Create issue in ${status}`:'Create issue';issueDialog.showModal();requestAnimationFrame(()=>issueTitle.focus());
 }
 

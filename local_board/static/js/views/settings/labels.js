@@ -1,5 +1,5 @@
 import {store, canWrite} from '../../store.js';
-import {$$, esc} from '../../dom.js';
+import {$$, esc, labelColorStyle} from '../../dom.js';
 import {DEFAULT_LABEL_COLOR} from '../../api.js';
 
 export function labelForm(label=null,{source='settings'}={}){
@@ -9,7 +9,7 @@ export function labelForm(label=null,{source='settings'}={}){
 }
 
 export function labelRow(label){
-  const content=`<span class="label-swatch" style="--label-color:${esc(label.color||'#8d8d95')}" aria-hidden="true"></span><span class="milestone-name">${esc(label.name)}</span>`;
+  const content=`<span class="label-swatch"${labelColorStyle(label.color)} aria-hidden="true"></span><span class="milestone-name">${esc(label.name)}</span>`;
   if(label.managed_by==='config')return `<div class="label-static">${content}<span class="managed-badge">TOML</span></div>`;
   if(!canWrite())return `<div class="label-static">${content}<span></span></div>`;
   return `<details class="label-settings-editor" data-label-editor="${label.id}"><summary aria-label="Edit label ${esc(label.name)}">${content}<span class="milestone-more" aria-hidden="true">···</span></summary>${labelForm(label)}</details>`;

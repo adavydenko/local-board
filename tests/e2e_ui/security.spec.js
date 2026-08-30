@@ -153,3 +153,53 @@ test.describe('injection payloads (own entities, isolated from other specs)', ()
     expect(pageErrors).toEqual([]);
   });
 });
+
+test.describe('label color cannot inject CSS into the style attribute', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(value => {
+      try { localStorage.setItem('localBoardToken', value); } catch {}
+    }, token());
+  });
+
+  test('a non-hex label color is dropped instead of reaching --label-color', async ({ page, request, baseURL }) => {
+    // Label colors are actor-controlled and land inside style="". Escaping stops
+    // an attribute break-out but not CSS injection within the attribute, so the
+    // client emits the custom property only for literal hex values.
+    const name = `CSSI-${Date.now()}`;
+    const response = await request.post(`${baseURL}/api/labels`, {
+      headers: { Authorization: `Bearer ${token()}` },
+      data: { name, color: 'red;background:url(https://example.invalid/x.png)' },
+    });
+    expect(response.ok(), await response.text()).toBeTruthy();
+
+    await page.goto('/');
+    await page.click('[data-view="settings"]');
+    await page.click('[data-settings-tab="labels"]');
+    // Every label row renders the swatch immediately before its name, whether the
+    // row is a read-only entry or an expandable editor.
+    const swatch = page.locator('#settingsLabels .milestone-name', { hasText: name })
+      .locator('xpath=preceding-sibling::span[contains(@class,"label-swatch")]');
+    await expect(swatch).toBeVisible();
+    // No style attribute at all, so the stylesheet's --label-default applies.
+    expect(await swatch.getAttribute('style')).toBeNull();
+    expect(await swatch.evaluate(el => getComputedStyle(el).backgroundImage)).toBe('none');
+  });
+
+  test('a valid hex label color still reaches --label-color', async ({ page, request, baseURL }) => {
+    const name = `HEXOK-${Date.now()}`;
+    await request.post(`${baseURL}/api/labels`, {
+      headers: { Authorization: `Bearer ${token()}` },
+      data: { name, color: '#123abc' },
+    });
+    await page.goto('/');
+    await page.click('[data-view="settings"]');
+    await page.click('[data-settings-tab="labels"]');
+    // Every label row renders the swatch immediately before its name, whether the
+    // row is a read-only entry or an expandable editor.
+    const swatch = page.locator('#settingsLabels .milestone-name', { hasText: name })
+      .locator('xpath=preceding-sibling::span[contains(@class,"label-swatch")]');
+    await expect(swatch).toBeVisible();
+    expect(await swatch.getAttribute('style')).toContain('--label-color:#123abc');
+    expect(await swatch.evaluate(el => getComputedStyle(el).backgroundColor)).toBe('rgb(18, 58, 188)');
+  });
+});

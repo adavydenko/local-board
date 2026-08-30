@@ -1,5 +1,5 @@
 import {store, canWrite, statusesSorted, findIssueRef, milestoneName} from '../store.js';
-import {$, $$, esc, initials, humanize, relativeTime, markdown, notify, safeExternalUrl} from '../dom.js';
+import {$, $$, esc, initials, humanize, relativeTime, markdown, notify, safeExternalUrl, labelColorStyle} from '../dom.js';
 import {api} from '../api.js';
 import {render, openDetail, setView} from '../main.js';
 import {statusIndicator, priorityMark} from './issues.js';
@@ -54,8 +54,8 @@ export function detailLabels(issue){
   const active=new Set((issue.labels||[]).map(label=>label.id));
   const available=(store.data.board?.labels||[]).filter(label=>!active.has(label.id));
   const empty=available.length?'No labels yet — add one to make this issue easier to find.':'No labels attached yet.';
-  const selected=(issue.labels||[]).map(label=>`<button class="assigned-label" type="button" data-action="toggle-label" data-label="${label.id}" aria-label="Remove label ${esc(label.name)}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)} <span aria-hidden="true">×</span></button>`).join('')||`<span class="empty-inline">${empty}</span>`;
-  const options=available.map(label=>`<button class="label-button" type="button" data-action="toggle-label" data-label="${label.id}"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</button>`).join('')||'<span class="empty-inline">All existing labels are attached.</span>';
+  const selected=(issue.labels||[]).map(label=>`<button class="assigned-label" type="button" data-action="toggle-label" data-label="${label.id}" aria-label="Remove label ${esc(label.name)}"><span class="label-dot"${labelColorStyle(label.color)}></span>${esc(label.name)} <span aria-hidden="true">×</span></button>`).join('')||`<span class="empty-inline">${empty}</span>`;
+  const options=available.map(label=>`<button class="label-button" type="button" data-action="toggle-label" data-label="${label.id}"><span class="label-dot"${labelColorStyle(label.color)}></span>${esc(label.name)}</button>`).join('')||'<span class="empty-inline">All existing labels are attached.</span>';
   const creator=store.creatingIssueLabel?labelForm(null,{source:'issue'}):`<button class="label-button label-create-action" type="button" data-action="start-create-issue-label">+ Create label…</button>`;
   const picker=canWrite()?`<details class="label-editor" data-property-picker="labels"><summary data-action="property-trigger">Add label</summary><div class="label-options">${options}${creator}</div></details>`:'';
   return `<div class="label-picker">${selected}</div>${picker}`;
@@ -93,7 +93,7 @@ export function gitLinksMarkup(issue){
 }
 
 export function readOnlyProperties(issue){
-  const labels=(issue.labels||[]).map(label=>`<span class="label-chip"><span class="label-dot" style="--label-color:${esc(label.color)}"></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None</span>';
+  const labels=(issue.labels||[]).map(label=>`<span class="label-chip"><span class="label-dot"${labelColorStyle(label.color)}></span>${esc(label.name)}</span>`).join('')||'<span class="muted">None</span>';
   return `<h2 class="properties-heading">Properties</h2>
     <div class="property"><span>Status</span><strong class="property-value">${statusIndicator(statusForName(issue.status))}${esc(issue.status)}</strong></div>
     <div class="property"><span>Assignee</span><strong>${esc(issue.assignee||'Unassigned')}</strong></div>

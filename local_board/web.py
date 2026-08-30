@@ -76,7 +76,7 @@ class _TooLarge(Exception):
 def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
     allowed = LOCAL_HOSTNAMES | (allowed_hosts or frozenset())
     class Handler(BaseHTTPRequestHandler):
-        server_version = "LocalBoard/0.1"
+        server_version = f"LocalBoard/{__version__}"
         protocol_version = "HTTP/1.1"
 
         # -- response helpers ------------------------------------------------------
@@ -89,8 +89,13 @@ def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
             self.end_headers()
             self.wfile.write(body)
 
-        def _csp_header(self) -> None:
+        def _browser_headers(self) -> None:
+            """Headers for responses a browser renders or executes."""
             self.send_header("Content-Security-Policy", CSP_POLICY)
+            # The static route declares an exact Content-Type per extension;
+            # nosniff makes the browser honor it instead of guessing, which is
+            # what keeps a mistyped asset from being reinterpreted as script.
+            self.send_header("X-Content-Type-Options", "nosniff")
 
         def _empty(self, status: int) -> None:
             self.send_response(status)
@@ -175,7 +180,7 @@ def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
             self.send_header("Content-Length", str(len(body)))
             # Localhost tool: freshness beats caching, a stale module is a subtle bug.
             self.send_header("Cache-Control", "no-cache")
-            self._csp_header()
+            self._browser_headers()
             self.end_headers()
             self.wfile.write(body)
 
@@ -203,7 +208,7 @@ def make_handler(board: Board, allowed_hosts: frozenset[str] | None = None):
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
                 self.send_header("Content-Length", str(len(body)))
-                self._csp_header()
+                self._browser_headers()
                 self.end_headers()
                 self.wfile.write(body)
                 return

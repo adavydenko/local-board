@@ -123,6 +123,7 @@ class WebUiShellTest(unittest.TestCase):
         cls.html = (static_root / "index.html").read_text()
         cls.markup = MarkupTree(cls.html)
         cls.css_dir = static_root / "css"
+        cls.js_dir = static_root / "js"
         cls.css = "\n".join(path.read_text() for path in sorted(cls.css_dir.glob("*.css")))
 
     def test_head_declares_the_six_stylesheets_in_load_order(self):
@@ -263,6 +264,23 @@ class WebUiShellTest(unittest.TestCase):
                 literals, [], f"color literals outside tokens.css in {css_path.name}: {literals}"
             )
 
+    def test_label_colors_reach_the_style_attribute_only_through_dom_js(self):
+        """Ratchet against re-opening the CSS-injection hole in `style=""`.
+
+        Label colors are actor-controlled and land inside a style attribute
+        value, where esc() prevents an attribute break-out but not further
+        CSS injection ("red;background:url(...)"). dom.js's
+        labelColorStyle() is the one place that decides what may be emitted
+        (a literal hex color, or nothing at all); any other module writing
+        `--label-color:` into a template would bypass that check.
+        """
+        offenders = sorted(
+            str(path.relative_to(self.js_dir))
+            for path in self.js_dir.rglob("*.js")
+            if path.name != "dom.js" and "--label-color:" in path.read_text()
+        )
+        self.assertEqual(offenders, [], f"--label-color emitted outside dom.js: {offenders}")
+
     def test_status_indicator_css_classes_cover_every_status_category(self):
         """Ratchet, kept as a substring check on purpose.
 
@@ -367,6 +385,19 @@ class WebUiTest(unittest.TestCase):
         status, body = self.request("GET", "/", token=False, parse_json=False)
         self.assertEqual(status, 200)
         self.assertIn(b"<html", body.lower())
+
+    def test_browser_responses_forbid_content_type_sniffing(self):
+        """nosniff makes the browser honor the exact types the static route declares."""
+        for path in ("/", "/static/js/main.js", "/static/css/tokens.css"):
+            request = Request(self.url + path)
+            with urlopen(request, timeout=3) as response:
+                self.assertEqual(response.headers["X-Content-Type-Options"], "nosniff", path)
+
+    def test_server_header_tracks_the_package_version(self):
+        """A hardcoded version here silently rots at every release."""
+        request = Request(self.url + "/health")
+        with urlopen(request, timeout=3) as response:
+            self.assertIn(__version__, response.headers["Server"])
 
     def test_root_sends_a_strict_content_security_policy(self):
         """The UI keeps the actor's bearer token in localStorage, so a CSP is the

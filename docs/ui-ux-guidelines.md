@@ -38,7 +38,7 @@ Every color in the stylesheet is a `var(--…)` reference to a token defined in 
 - A new color means a new token in `:root`, named for its role (`--danger-edge`, `--code-bg`), not its value.
 - Status categories are colored only through `--status-backlog / -unstarted / -started / -completed / -canceled`; priority meters through `--priority-mark`. Anything status-shaped reuses these rather than inventing a nearby grey.
 - Shadows are complete `--shadow-*` values (`xs / sm / menu / overlay / modal`); pick the closest existing one instead of adding a bespoke shadow.
-- Text on filled dark or accent surfaces uses `--on-accent`. Label colors from board data flow through the inline `--label-color` custom property with `--label-default` as the fallback.
+- Text on filled dark or accent surfaces uses `--on-accent`. Label colors from board data flow through the inline `--label-color` custom property with `--label-default` as the fallback. Because that value is actor-controlled and lands inside a `style=""` attribute — where escaping stops an attribute break-out but not further CSS injection — it is emitted only by `dom.js`'s `labelColorStyle()`, which passes literal hex colors and drops anything else so the fallback applies. Never interpolate `--label-color:` into markup anywhere else (a unit test enforces this).
 - This single-place palette is the prerequisite for theming: a dark theme is a `:root` override, not a stylesheet rewrite.
 
 ## Where things live
