@@ -15,6 +15,11 @@ your own project — the board enforces almost none of it.
 All board reads and writes go through Local Board MCP. Never open
 `.local-board/state/board.db` directly and never commit a token.
 
+**Write as yourself.** Use the token minted for your own actor, from
+`LOCAL_BOARD_TOKEN`. Borrowing the orchestrator's admin token attributes your claims,
+comments and transitions to the orchestrator — which quietly destroys the one thing
+the activity journal is for.
+
 **The board is a coordination tool, not a diary. Budget about 8 calls for a whole
 issue.** Every call is a model turn, and every turn re-reads your whole context —
 bookkeeping is not free, it is the most expensive part of a small issue. Four rules
@@ -47,7 +52,10 @@ personal failure.
 - If the acceptance criteria are ambiguous, or the issue carries a label that marks
   it as undecided (`awaiting-answer`, `decision`), ask the user first. Never guess
   scope.
-- **Check the claim before anything else — the claim is the lock.**
+- **Check the claim before anything else — the lease is the lock.** Being listed as
+  `assignee` is ownership, not a claim: an assignee with no live lease does not block
+  pickup, and a live lease does block it even when the assignee is someone else. Read
+  `claim_expires_at`, not the name.
   - `assignee` empty, or the lease in `claim_expires_at` has passed → call
     `claim_issue` with the `revision` you just read.
   - Claimed by you → proceed.
@@ -93,6 +101,11 @@ personal failure.
   Keep the main context for decisions, not file dumps.
 - For anything non-trivial, propose the implementation plan and get approval before
   editing.
+- **If the change touches a shared contract — an API schema, a wire format, a public
+  interface other issues are built against — the contract change is step one of the
+  plan and its own reviewable unit.** Spec diff first, then whatever is generated
+  from it, then the implementation. Changing the contract last means every other
+  agent read the old one while you worked.
 - Record the plan as markdown checkboxes in the issue description — `- [ ]` lines,
   one per acceptance criterion, written in a single `update_issue`. There is no
   separate checklist API: the checkboxes *are* the checklist. If the issue already
@@ -159,6 +172,10 @@ personal failure.
 
 - Run the code-review skill on the diff. Fix confirmed findings; note skipped ones
   with reasons in the final report.
+- **Commit first — review is post-commit.** Review fixes land as follow-up commits
+  carrying the same issue key, not as amendments. A reviewer needs a stable commit to
+  point at, and on a shared tree an amended commit pulls the ground out from under
+  anyone who already fetched it.
 
 ## 9. Close out (definition of done)
 
@@ -183,10 +200,19 @@ Aim to spend **one comment plus one batched mutation** here.
   checkboxes, set the terminal status, and adjust labels. Attach the landing
   commit(s) with `add_git_link(refs: [...])` — one call for the whole batch, or fold
   it into the same JSON-RPC array.
-- **Route the issue**: if it carries `review_required`, or the work touched contracts,
-  schema, auth or conventions, move it to a review status instead of a terminal one
-  and comment what to check. The board does **not** enforce this — if you skip it
-  nothing will stop you and the work ships unreviewed.
+- **Route the issue.** Your project's own doc decides routing; this is the default.
+  Move it to a review status instead of a terminal one when it carries
+  `review_required` — or, as a **backstop you apply yourself**, when the work touched
+  contracts, schema, auth, conventions or added a dependency. The label is set at
+  triage by someone who had not seen the diff; you have. Escalate on the backstop and
+  say why. The board does **not** enforce any of this — if you skip it nothing will
+  stop you and the work ships unreviewed.
+- **When you close without review, say so in the closing comment** — "closed without
+  human review" in as many words. An unreviewed change that looks exactly like a
+  reviewed one is the failure mode this line exists to prevent.
+- **If the work is user-visible, add a "what to check in the app" note.** Name the
+  screens and the actions, not the code. This is what an orchestrator compiles into a
+  walkthrough checklist, and what a human uses when they finally look.
 - **Do not call `release_issue` on work you just finished.** It clears the assignee
   as well as the lease, leaving finished work with no author. Moving to a
   `completed`- or `canceled`-category status extinguishes the lease by itself.
@@ -257,9 +283,10 @@ Rules:
 - **Inner subagents get tiers too**: the independent test-writer is Sonnet; an
   adversarial review pass is Opus.
 - **Escalate a stuck agent one tier up.** If an agent loops — retrying the same failing
-  approach, re-reading the same files without converging — stop it and relaunch that
-  work one tier higher with a summary of what was already tried. Looping burns more
-  tokens than the bigger model would have.
+  approach, re-reading the same files without converging, or needing repeated resumes
+  on the same step — stop it and relaunch that work one tier higher with a summary of
+  what was already tried. Looping burns more tokens than the bigger model would have;
+  do not let a cheap model grind.
 - **The board cannot help you here.** It has no notion of model class, cost or
   capability: any agent can claim any issue. Routing is entirely the orchestrator's
   job — encode it in who you hand the issue to, and say so in the issue description.
